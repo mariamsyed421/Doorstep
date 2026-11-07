@@ -28,3 +28,6 @@ use the editor.
   own key and store it in Secrets.
 - **Secrets.** Lovable manages them. Do not put secret values in the repo.
 <!-- LOVABLE:END -->
+
+## Project rules
+- Doorstep demo is front-end only: mock residents live in src/lib/doorstep-data.ts and all state (timeline stage, resolutions, logs) lives in the Dashboard component — no backend needed for a scripted demo.
