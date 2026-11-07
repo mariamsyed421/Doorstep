@@ -4,10 +4,18 @@ import { Dashboard } from "@/components/doorstep/Dashboard";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Doorstep — knows where to look after a storm" },
-      { name: "description", content: "One pre-storm text plus post-storm check-ins show coordinators exactly who needs help and where to look." },
-      { property: "og:title", content: "Doorstep — knows where to look" },
-      { property: "og:description", content: "See who is safe, who is silent, and where to look first after a storm." },
+      { title: "Doorstep — Richardson catastrophe response map" },
+      {
+        name: "description",
+        content:
+          "A map-first catastrophe response demo for coordinators: prioritize Richardson neighborhoods, find silent households, and simulate neighbor check-ins.",
+      },
+      { property: "og:title", content: "Doorstep — Richardson catastrophe response map" },
+      {
+        property: "og:description",
+        content:
+          "Prioritize neighborhoods, check silent households, and coordinate help after the storm.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
