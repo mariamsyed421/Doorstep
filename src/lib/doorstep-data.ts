@@ -19,7 +19,7 @@ export interface Resident {
   row: "north" | "south";
 }
 
-const r = (x: Omit<Resident, "id">): Resident => ({ ...x, id: x.address.split(" ")[0] });
+const r = (x: Omit<Resident, "id">): Resident => ({ ...x, id: x.address.split(" ")[0] ?? x.address });
 
 export const RESIDENTS: Resident[] = [
   // North side (even)

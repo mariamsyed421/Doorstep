@@ -7,7 +7,7 @@ import { Phone, type PhoneView } from "./Phone";
 type Status = "safe" | "needsHelp" | "silent" | "helpOnWay";
 type Log = { time: string; text: string };
 
-const byId = Object.fromEntries(RESIDENTS.map((r) => [r.id, r]));
+const byId: Record<string, Resident> = Object.fromEntries(RESIDENTS.map((r) => [r.id, r]));
 const STAGE_TIME = ["Fri 6:10pm", "Sat 2:00pm", "Sat 4:02pm", "Sat 8:02pm"];
 
 function baseLog(r: Resident, stage: number): Log[] {
@@ -155,8 +155,8 @@ export function Dashboard() {
   }, [stage, demo]);
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
-  const sel = selected ? byId[selected] : null;
-  const phoneRes = phone ? byId[phone.id] : null;
+  const sel = selected ? byId[selected] ?? null : null;
+  const phoneRes = phone ? byId[phone.id] ?? null : null;
 
   const tagFor = (r: Resident) => {
     const s = statusOf(r);
@@ -179,7 +179,7 @@ export function Dashboard() {
         <House key={r.id} resident={r} planShown={planShown} porch={porch}
           urgent={s === "silent" && r.planAnswer === "home"}
           delay={stage >= 2 ? (i + offset) * 140 : (i + offset) * 90}
-          tag={tagFor(r)} selected={selected === r.id} onClick={() => open(r.id)} />
+          tag={tagFor(r) ?? null} selected={selected === r.id} onClick={() => open(r.id)} />
       );
     });
 
