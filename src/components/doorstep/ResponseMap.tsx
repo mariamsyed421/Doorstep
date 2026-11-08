@@ -35,7 +35,22 @@ import {
   type County,
   type MapBounds,
 } from "@/lib/response-map-geometry";
-import { addResponseLayers, BUILDING_MIN_ZOOM, EMPTY_COLLECTION } from "@/lib/response-map-layers";
+import {
+  addResponseLayers,
+  BUILDING_MIN_ZOOM,
+  BUILDING_FILTER,
+  EMPTY_COLLECTION,
+} from "@/lib/response-map-layers";
+import {
+  matchHouseholdBuildings,
+  type BuildingAnchors,
+  type MapPosition,
+} from "@/lib/household-building-anchors";
+import {
+  roofMarker,
+  roofMarkerProjection,
+  type RoofMarker,
+} from "@/lib/household-marker-projection";
 
 setWorkerUrl(workerUrl);
 
@@ -170,12 +185,14 @@ function tooltip(
   position: [number, number],
   content: HTMLElement,
   permanent = false,
+  elevated = false,
 ) {
   const popup = new Popup({
     closeButton: false,
     closeOnClick: false,
     offset: 18,
     maxWidth: "270px",
+    ...(elevated ? { anchor: "bottom" as const } : {}),
   })
     .setLngLat(position)
     .setDOMContent(content);
@@ -210,6 +227,10 @@ export default function ResponseMap(props: Props) {
   const [countyError, setCountyError] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
   const [tileWarning, setTileWarning] = useState(false);
+  const [buildingAnchors, setBuildingAnchors] = useState<BuildingAnchors>({});
+  const anchorsRef = useRef<BuildingAnchors>({});
+  const selectedBuilding = props.selected ? buildingAnchors[props.selected] : undefined;
+  const roofMarkers = useRef(new Map<string, RoofMarker>());
 
   const countyOptions = useMemo(
     () =>
@@ -428,6 +449,7 @@ export default function ResponseMap(props: Props) {
       if (!active) return;
       addResponseLayers(map);
       addSimulationLayers(map);
+      map.addLayer(roofMarkerProjection(map, roofMarkers.current));
       setReady(true);
       syncView();
     };
@@ -505,6 +527,42 @@ export default function ResponseMap(props: Props) {
     setSelection(countyAt(counties, boundsCenter(bounds)) ?? null);
     fit(bounds, 50, props.district === "elm" ? 19 : 15);
   }, [counties, fit, props.district, ready, returnToTexas, setSelection]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map || props.district !== "elm") return;
+    const matchBuildings = () => {
+      if (
+        map.getZoom() < BUILDING_MIN_ZOOM ||
+        !map.areTilesLoaded() ||
+        Object.keys(anchorsRef.current).length === RESIDENTS.length
+      )
+        return;
+      const layer = map.getStyle().layers.find((l) => l.id === "response-buildings");
+      if (!layer || layer.type !== "fill-extrusion") return;
+      const buildings = map.querySourceFeatures(layer.source, {
+        sourceLayer: layer["source-layer"]!,
+        filter: BUILDING_FILTER,
+      });
+      const next = matchHouseholdBuildings(RESIDENTS, buildings, anchorsRef.current);
+      if (next !== anchorsRef.current) {
+        const firstPlacement = Object.keys(anchorsRef.current).length === 0;
+        anchorsRef.current = next;
+        setBuildingAnchors(next);
+        if (firstPlacement && !latest.current.selected) {
+          fit(
+            coordinateBounds(RESIDENTS.map((r) => next[r.id]?.position ?? [r.lng, r.lat])),
+            map.getPitch(),
+          );
+        }
+      }
+    };
+    map.on("idle", matchBuildings);
+    matchBuildings();
+    return () => {
+      map.off("idle", matchBuildings);
+    };
+  }, [props.district, ready, fit]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -611,33 +669,56 @@ export default function ResponseMap(props: Props) {
           event.stopPropagation();
           latest.current.onSelect(resident.id);
         });
-        const position: [number, number] = [resident.lng, resident.lat];
-        const marker = new Marker({ element }).setLngLat(position).addTo(map);
-        popups.push(
-          tooltip(
-            map,
-            element,
-            position,
-            tooltipContent(
-              `${resident.shortName} · ${resident.address}`,
-              ...(props.assessments[resident.id]
-                ? [
-                    `Score ${props.assessments[resident.id]!.score} · ${props.assessments[resident.id]!.level.toUpperCase()}`,
-                  ]
-                : []),
-              `“${resident.planQuote}”`,
-            ),
-            selected,
+        const anchor = buildingAnchors[resident.id];
+        const position: MapPosition = anchor?.position ?? [resident.lng, resident.lat];
+        element.dataset["residentId"] = resident.id;
+        element.dataset["placement"] = anchor ? "building" : "synthetic";
+        const marker = new Marker({ element, subpixelPositioning: true })
+          .setLngLat(position)
+          .addTo(map);
+        const popup = tooltip(
+          map,
+          element,
+          position,
+          tooltipContent(
+            `${resident.shortName} · ${resident.address}`,
+            ...(props.assessments[resident.id]
+              ? [
+                  `Score ${props.assessments[resident.id]!.score} · ${props.assessments[resident.id]!.level.toUpperCase()}`,
+                ]
+              : []),
+            `“${resident.planQuote}”`,
+            anchor
+              ? "Illustrative demo building · not address-verified"
+              : "Synthetic location · no nearby building match",
           ),
+          selected,
+          true,
+        );
+        popups.push(popup);
+        roofMarkers.current.set(
+          resident.id,
+          roofMarker(marker, popup, position, anchor?.height ?? 0),
         );
         return marker;
       },
     );
+    map.triggerRepaint();
+    const projected = roofMarkers.current;
     return () => {
+      markers.forEach((marker) => projected.delete(marker.getElement().dataset["residentId"]!));
       markers.forEach((m) => m.remove());
       popups.forEach((p) => p.remove());
     };
-  }, [props.district, props.markers, props.assessments, props.visible, props.selected, ready]);
+  }, [
+    props.district,
+    props.markers,
+    props.assessments,
+    props.visible,
+    props.selected,
+    ready,
+    buildingAnchors,
+  ]);
 
   // Queue → map sync: fly to the selected household at street zoom.
   useEffect(() => {
@@ -645,11 +726,11 @@ export default function ResponseMap(props: Props) {
     const resident = RESIDENTS.find((r) => r.id === props.selected);
     if (!ready || !map || !resident || props.district !== "elm") return;
     map.flyTo({
-      center: [resident.lng, resident.lat],
+      center: selectedBuilding?.position ?? [resident.lng, resident.lat],
       zoom: Math.max(map.getZoom(), 18.5),
       duration: reducedMotion() ? 0 : 800,
     });
-  }, [props.selected, props.district, ready]);
+  }, [props.selected, props.district, ready, selectedBuilding]);
 
   // Simulated outage zones (labeled SIMULATED on hover).
   useEffect(() => {
@@ -710,12 +791,15 @@ export default function ResponseMap(props: Props) {
             return {
               type: "Feature",
               properties: { opacity: 0.12 + w * 0.3 },
-              geometry: circle(r.lng, r.lat, 22 + w * 30),
+              geometry: circle(
+                ...(buildingAnchors[r.id]?.position ?? ([r.lng, r.lat] as MapPosition)),
+                22 + w * 30,
+              ),
             };
           })
         : [],
     });
-  }, [props.heatmap, props.district, props.markers, props.assessments, ready]);
+  }, [props.heatmap, props.district, props.markers, props.assessments, ready, buildingAnchors]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -726,15 +810,26 @@ export default function ResponseMap(props: Props) {
       source.setData(EMPTY_COLLECTION);
       return;
     }
-    const position: [number, number] = [resident.neighbor.lng, resident.neighbor.lat];
+    const neighbor = RESIDENTS.find((r) => r.address === resident.neighbor.address);
+    const neighborAnchor = neighbor && buildingAnchors[neighbor.id];
+    const position: MapPosition = neighborAnchor?.position ?? [
+      resident.neighbor.lng,
+      resident.neighbor.lat,
+    ];
+    const destination: MapPosition = buildingAnchors[resident.id]?.position ?? [
+      resident.lng,
+      resident.lat,
+    ];
     source.setData({
       type: "Feature",
       properties: {},
-      geometry: { type: "LineString", coordinates: [position, [resident.lng, resident.lat]] },
+      geometry: { type: "LineString", coordinates: [position, destination] },
     });
     const element = markerButton(`${resident.neighbor.name} is on the way`, "walking-marker");
     element.textContent = "↟";
-    const marker = new Marker({ element }).setLngLat(position).addTo(map);
+    const marker = new Marker({ element, subpixelPositioning: true })
+      .setLngLat(position)
+      .addTo(map);
     const popup = tooltip(
       map,
       element,
@@ -744,7 +839,14 @@ export default function ResponseMap(props: Props) {
         `${resident.neighbor.name.split(" ")[0]} is on the way`,
       ),
       true,
+      true,
     );
+    roofMarkers.current.set(
+      "walking",
+      roofMarker(marker, popup, position, neighborAnchor?.height ?? 0),
+    );
+    map.triggerRepaint();
+    const projected = roofMarkers.current;
     let frame = 0;
     const timer = reducedMotion()
       ? undefined
@@ -756,8 +858,9 @@ export default function ResponseMap(props: Props) {
       window.clearInterval(timer);
       marker.remove();
       popup.remove();
+      projected.delete("walking");
     };
-  }, [props.walking, ready]);
+  }, [props.walking, ready, buildingAnchors]);
 
   return (
     <div className="county-map relative h-full w-full">
@@ -808,6 +911,12 @@ export default function ResponseMap(props: Props) {
           {countyError
             ? "County boundaries could not load. Existing response layers remain available."
             : statusText[buildingStatus]}
+          {props.district === "elm" && (
+            <span className="block">
+              Demo placements · {Object.keys(buildingAnchors).length}/{RESIDENTS.length} mapped
+              building anchors
+            </span>
+          )}
         </p>
       </div>
       <div className="map-float bottom-16 right-5 flex flex-col p-1">

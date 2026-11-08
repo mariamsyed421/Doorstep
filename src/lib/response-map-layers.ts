@@ -9,6 +9,7 @@ import { TEXAS_OUTLINE } from "@/lib/texas-boundary";
 
 export const EMPTY_COLLECTION: FeatureCollection = { type: "FeatureCollection", features: [] };
 export const BUILDING_MIN_ZOOM = 14;
+export const DEFAULT_BUILDING_HEIGHT = 8;
 export const BUILDING_FILTER: FilterSpecification = [
   "all",
   ["!=", ["get", "hide_3d"], true],
@@ -41,9 +42,9 @@ export function buildingLayer(style: StyleSpecification): FillExtrusionLayerSpec
         ["to-number", ["get", "render_min_height"], 0],
         [
           "case",
-          [">", ["to-number", ["get", "render_height"], 8], 0],
-          ["to-number", ["get", "render_height"], 8],
-          8,
+          [">", ["to-number", ["get", "render_height"], DEFAULT_BUILDING_HEIGHT], 0],
+          ["to-number", ["get", "render_height"], DEFAULT_BUILDING_HEIGHT],
+          DEFAULT_BUILDING_HEIGHT,
         ],
       ],
       "fill-extrusion-base": ["max", 0, ["to-number", ["get", "render_min_height"], 0]],
