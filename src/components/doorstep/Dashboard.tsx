@@ -23,13 +23,14 @@ import {
   RESIDENTS,
   DISTRICTS,
   districtCount,
-  accountedFor,
-  unconfirmed,
+  urgency,
   COUNTIES_BY_PRIORITY,
   COUNTY_BY_GEOID,
   DEMO_COUNTY,
   TEXAS_TOTALS,
   countySilentAtHome,
+  texasAccountedFor,
+  texasUnconfirmed,
   type Resident,
 } from "@/lib/doorstep-data";
 import {
@@ -149,26 +150,71 @@ export function Dashboard() {
   const person = RESIDENTS.find((r) => r.id === selected);
   const phonePerson = RESIDENTS.find((r) => r.id === phone);
   const ranked = [...DISTRICTS].sort(
-    (a, b) => districtCount(b, resolved) - districtCount(a, resolved),
+    (a, b) => districtCount(b, elmUnconfirmed) - districtCount(a, elmUnconfirmed),
   );
-  const resolvedHome = RESIDENTS.filter(
-    (r) =>
-      r.planAnswer === "home" &&
-      r.checkInStatus === "silent" &&
-      resolved[r.id] &&
-      resolved[r.id] !== "silent",
-  ).length;
-  const activeCounty = county ? COUNTY_BY_GEOID.get(county) : undefined;
-  const topCounties = COUNTIES_BY_PRIORITY.slice(0, 12);
-  const funnel = activeCounty ?? TEXAS_TOTALS;
-  // Elm Street confirmations only change the Dallas County and statewide figures.
-  const funnelResolved = !activeCounty || activeCounty.geoid === DEMO_COUNTY ? resolvedHome : 0;
-  const knockFirst = Math.max(0, funnel.liveAloneSilent - funnelResolved);
-  function backToTexas() {
-    setDistrict(null);
-    setCounty(null);
-    setSelected(null);
-  }
+
+  // ---------- Simulation clock ----------
+  useEffect(() => {
+    if (!sim.running) return;
+    const tickMs = 250;
+    const id = setInterval(() => {
+      acc.current += (60 / sim.secondsPerSimHour) * (tickMs / 1000);
+      const whole = Math.floor(acc.current);
+      if (whole > 0) {
+        acc.current -= whole;
+        dispatch({ type: "advance", minutes: whole });
+      }
+    }, tickMs);
+    return () => clearInterval(id);
+  }, [sim.running, sim.secondsPerSimHour]);
+
+  // ---------- Backend wiring ----------
+  useEffect(() => {
+    void health().then(setIntegrations);
+    void loadShelters().then(setShelters);
+  }, []);
+  const aiConfigured = Boolean(integrations?.nemotron || integrations?.gemini);
+  // Upgrade rules-based classifications with Nemotron / Gemini when configured.
+  useEffect(() => {
+    for (const id of sim.enrich) {
+      if (enriching.current.has(id)) continue;
+      enriching.current.add(id);
+      const m = sim.messages.find((x) => x.id === id);
+      if (!m || !aiConfigured) {
+        dispatch({ type: "enrich_done", messageId: id });
+        continue;
+      }
+      void classify(m.text, m.residentId).then((c) =>
+        dispatch(
+          c.provider === "rules"
+            ? { type: "enrich_done", messageId: id }
+            : { type: "enriched", messageId: id, classification: c },
+        ),
+      );
+    }
+  }, [sim.enrich, sim.messages, aiConfigured]);
+  // Inbound replies persisted by /api/webhook (Supabase configured only).
+  useEffect(() => {
+    if (!integrations?.supabase) return;
+    const seen = new Set<string>();
+    let since = new Date().toISOString();
+    const id = setInterval(async () => {
+      for (const row of await inbox(since)) {
+        if (seen.has(row.id)) continue;
+        seen.add(row.id);
+        since = row.created_at;
+        const parsed = ClassificationResultSchema.safeParse(row.classification);
+        dispatch({
+          type: "reply",
+          residentId: row.resident_id,
+          text: row.reply,
+          ...(parsed.success ? { classification: parsed.data } : {}),
+        });
+      }
+    }, 5000);
+    return () => clearInterval(id);
+  }, [integrations?.supabase]);
+
   function later(ms: number, fn: () => void) {
     timers.current.push(setTimeout(fn, ms));
   }
@@ -301,7 +347,8 @@ export function Dashboard() {
     setDemoStep(1);
     setDistrict(null);
     setCounty(null);
-    setResolved({});
+    setFilter("all");
+    setSearch("");
     setReplies({});
     setNoAnswer({});
     setPending({});
@@ -330,41 +377,34 @@ export function Dashboard() {
       setDemoStep(6);
       setDemoCaption("Event 9 · Coordinator approves a neighbor check for Mrs. Lopez");
       setSelected("412");
-      setDemoPhase(3);
+      later(1500, () => {
+        const r = RESIDENTS.find((x) => x.id === "412");
+        if (r) approveAction(r, 4);
+      });
+      later(4500, () => {
+        answer("412", "okay");
+        setDemoCaption("Neighbor confirmed Mrs. Lopez is safe · silence escalation stopped");
+      });
+      later(8000, () => {
+        setDemo(false);
+        setDemoStep(0);
+        setDemoCaption("");
+        setPhone(null);
+      });
     }
-    later(6500, () => {
-      const r = RESIDENTS.find((r) => r.id === "412");
-      if (r) act(r);
-      setDemoPhase(4);
-    });
-    later(9500, () => {
-      answer("412", "okay");
-      setDemoPhase(5);
-    });
-    later(11500, () => {
-      // The city-wide response team confirms the other high-priority homes in parallel.
-      setResolved((x) => ({
-        ...x,
-        "438": "safe",
-        "452": "safe",
-      }));
-      setPhone(null);
-      setWalking(null);
-      setSelected(null);
-      setDistrict(null);
-      setCounty(null);
-      setDemoPhase(6);
-      ["438", "452"].forEach((id) => addLog(id, "Responder team confirmed safe", "5:16pm"));
-    });
-    later(14000, () => {
-      setDemo(false);
-      setDemoPhase(0);
-        });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [demo, demoStep, sim.now]);
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
   const hoursAgo = Math.max(0, sim.now);
- const unconfirmedTotal = active ? unconfirmed(resolved) : 0;
+  const unconfirmedTotal = active ? texasUnconfirmed(elmUnconfirmed) : 0;
+  const activeCounty = county ? COUNTY_BY_GEOID.get(county) : undefined;
+  const topCounties = COUNTIES_BY_PRIORITY.slice(0, 12);
+  function backToTexas() {
+    setDistrict(null);
+    setCounty(null);
+    setSelected(null);
+  }
   const nextHome = ordered.find(
     (r) =>
       active &&
@@ -373,13 +413,22 @@ export function Dashboard() {
       assessments[r.id] &&
       levelRank(assessments[r.id]!.level) >= levelRank("high"),
   );
-  const counts = [
-  { label: "Residents in the storm's path", value: TEXAS_TOTALS.enrolled },
-  { label: "Accounted for", value: active ? accountedFor(resolved) : 0 },
-  { label: "Still unconfirmed", value: unconfirmedTotal },
-  { label: "Unresolved inside outage zones", value: inOutage.length },
-  { label: "Urgent / high review", value: reviewNow.length },
-];
+  const countyUnconfirmed = activeCounty ? countySilentAtHome(activeCounty, elmUnconfirmed) : 0;
+  const counts = activeCounty
+    ? [
+        { label: "Residents in the storm's path", value: activeCounty.enrolled },
+        { label: "Accounted for", value: activeCounty.enrolled - countyUnconfirmed },
+        { label: "Still unconfirmed", value: countyUnconfirmed },
+        { label: "Customers without power", value: activeCounty.outages },
+        { label: "Live alone + unconfirmed", value: activeCounty.liveAloneSilent },
+      ]
+    : [
+        { label: "Residents in the storm's path", value: TEXAS_TOTALS.enrolled },
+        { label: "Accounted for", value: active ? texasAccountedFor(elmUnconfirmed) : 0 },
+        { label: "Still unconfirmed", value: unconfirmedTotal },
+        { label: "Unresolved inside outage zones", value: inOutage.length },
+        { label: "Urgent / high review", value: reviewNow.length },
+      ];
 
   return (
     <div className="dashboard-shell">
@@ -424,14 +473,20 @@ export function Dashboard() {
             Texas
           </h2>
           <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-            Squall line from Wichita Falls through Dallas to Tyler · Saturday, November 7 · 3 hours
-            ago · {TEXAS_TOTALS.outages.toLocaleString()} without power
+            {sim.incident.type} · {sim.incident.startedLabel} ·{" "}
+            {active
+              ? `${Math.floor(hoursAgo / 60)}h ${hoursAgo % 60}m ago`
+              : "incident not yet opened"}{" "}
+            · {sim.incident.id} · {TEXAS_TOTALS.outages.toLocaleString()} without power
           </p>
+          <div className="mt-3">
+            <SimControls sim={sim} dispatch={dispatch} disabled={demo} />
+          </div>
         </div>
         <IncidentGuide
-          priorityCount={priorityHomes.length}
-          unconfirmed={unconfirmed(resolved)}
-          pendingCount={silent.filter((r) => Boolean(pending[r.id])).length}
+          priorityCount={reviewNow.length}
+          unconfirmed={unconfirmedTotal}
+          pendingCount={Object.keys(pending).length}
           nextHome={nextHome}
           demo={demo}
           onReview={() => {
@@ -444,7 +499,7 @@ export function Dashboard() {
         <div className="incident-totals" aria-live="polite">
           <div>
             <p className="incident-number">
-              {accountedFor(resolved).toLocaleString()}
+              {active ? texasAccountedFor(elmUnconfirmed).toLocaleString() : "—"}
               <span className="ml-2 text-sm font-normal text-muted-foreground">
                 / {TEXAS_TOTALS.enrolled.toLocaleString()}
               </span>
@@ -452,7 +507,9 @@ export function Dashboard() {
             <p className="mt-1 text-xs text-muted-foreground">Residents accounted for</p>
           </div>
           <div className="incident-unconfirmed">
-            <p className="incident-number text-danger">{unconfirmed(resolved).toLocaleString()}</p>
+            <p className="incident-number text-danger">
+              {active ? unconfirmedTotal.toLocaleString() : "—"}
+            </p>
             <p className="mt-1 text-xs text-muted-foreground">Still unconfirmed</p>
           </div>
         </div>
@@ -465,7 +522,12 @@ export function Dashboard() {
                 district={district}
                 county={county}
                 onCounty={setCounty}
-                resolved={resolved}
+                markers={markers}
+                assessments={assessments}
+                outages={sim.outages}
+                elmUnconfirmed={elmUnconfirmed}
+                visible={visible}
+                heatmap={heatmap}
                 selected={selected}
                 walking={walking}
                 onDistrict={setDistrict}
@@ -562,7 +624,7 @@ export function Dashboard() {
                     <span>Lower</span>
                     <span>Higher</span>
                   </div>
-                  <p className="mt-2 text-muted-foreground">Silent at home by county · mock data</p>
+                  <p className="mt-2 text-muted-foreground">Unconfirmed by county · mock data</p>
                 </div>
               )}
             </div>
@@ -584,7 +646,7 @@ export function Dashboard() {
         <aside
           className="response-panel"
           aria-label={
-            district ? "Where to look" : county ? "County priorities" : "Statewide priorities"
+            district ? "Priority queue" : county ? "County priorities" : "Statewide priorities"
           }
         >
           {!district ? (
@@ -608,19 +670,7 @@ export function Dashboard() {
                   )}
                 </div>
                 <dl className="response-counts">
-                  {[
-                    { label: "Residents in the storm's path", value: funnel.enrolled },
-                    {
-                      label: "Replied safe",
-                      value: funnel.enrolled - funnel.silent + funnelResolved,
-                    },
-                    { label: "Silent after check-in", value: funnel.silent - funnelResolved },
-                    {
-                      label: "Said they'd be home",
-                      value: Math.max(0, funnel.silentAtHome - funnelResolved),
-                    },
-                    { label: "Home + vulnerable", value: knockFirst },
-                  ].map((item, index) => (
+                  {counts.map((item, index) => (
                     <div
                       key={item.label}
                       className={cn(
@@ -636,20 +686,19 @@ export function Dashboard() {
                 <p
                   className={cn(
                     "priority-note mt-5 flex items-start gap-2 text-xs leading-relaxed",
-                    knockFirst ? "text-danger" : "text-foreground",
+                    reviewNow.length ? "text-danger" : "text-foreground",
                   )}
                 >
-                  {knockFirst ? (
+                  {reviewNow.length ? (
                     <Footprints className="mt-0.5 size-4 shrink-0" />
                   ) : (
                     <Check className="mt-0.5 size-4 shrink-0" />
                   )}
-                  {knockFirst
-                    ? `${knockFirst.toLocaleString()} people need a knock first`
-                    : "Priority home checks are complete"}
-                </p>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  {funnel.outages.toLocaleString()} customers without power
+                  {reviewNow.length
+                    ? `${reviewNow.length} households need review first`
+                    : active
+                      ? "Priority reviews are complete"
+                      : "Waiting for the incident to open"}
                 </p>
               </section>
               {!activeCounty || activeCounty.geoid === DEMO_COUNTY ? (
@@ -662,7 +711,7 @@ export function Dashboard() {
                     {activeCounty ? "Richardson neighborhoods" : "Send responders here first"}
                   </h2>
                   <p className="mb-5 mt-2 text-xs leading-relaxed text-muted-foreground">
-                    Ranked by people silent at home.
+                    Ranked by unconfirmed households.
                   </p>
                   <div className="queue-column-heads flex justify-between border-b border-border pb-2 text-[11px] text-muted-foreground">
                     <span>{activeCounty ? "Neighborhood" : "County"}</span>
@@ -675,7 +724,7 @@ export function Dashboard() {
                             key={d.id}
                             rank={i + 1}
                             name={d.name}
-                            count={districtCount(d, resolved)}
+                            count={districtCount(d, elmUnconfirmed)}
                             onClick={() => setDistrict(d.id)}
                           />
                         ))
@@ -684,7 +733,7 @@ export function Dashboard() {
                             key={c.geoid}
                             rank={i + 1}
                             name={`${c.name} County`}
-                            count={countySilentAtHome(c, resolved)}
+                            count={countySilentAtHome(c, elmUnconfirmed)}
                             onClick={() => setCounty(c.geoid)}
                           />
                         ))}
@@ -710,7 +759,7 @@ export function Dashboard() {
                   <p className="mt-2 text-sm text-muted-foreground">
                     {activeCounty.silentAtHome
                       ? "County response team is working through check-ins."
-                      : "No one silent at home. Monitoring only."}
+                      : "No one unconfirmed. Monitoring only."}
                   </p>
                   <Button
                     onClick={() => setDistrict("elm")}

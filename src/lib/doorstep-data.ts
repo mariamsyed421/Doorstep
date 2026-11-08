@@ -703,6 +703,16 @@ export function urgency(count: number): "quiet" | "amber" | "orange" | "red" {
 export function districtCount(d: District, elmUnconfirmed: number) {
   return d.id === "elm" ? elmUnconfirmed : d.silentAtHome;
 }
+/** Residents outside the modeled Elm households assumed reached; Elm comes from the live simulation. */
+export const CITY_TOTAL = DISTRICTS.reduce((n, d) => n + d.totalResidents, 0);
+export const OTHER_DISTRICTS_UNCONFIRMED = DISTRICTS.filter((d) => d.id !== "elm").reduce(
+  (n, d) => n + d.silentAtHome,
+  0,
+);
+export function accountedFor(elmUnconfirmed: number) {
+  return CITY_TOTAL - OTHER_DISTRICTS_UNCONFIRMED - elmUnconfirmed;
+}
+
 export { TEXAS_COUNTIES, type CountyResponse } from "./texas-county-data";
 
 /** Dallas County contains Richardson, so it hosts the neighborhood and Elm Street demos. */
@@ -723,38 +733,16 @@ export const TEXAS_TOTALS = TEXAS_COUNTIES.reduce(
 export const COUNTIES_BY_PRIORITY = [...TEXAS_COUNTIES].sort(
   (a, b) => b.silentAtHome - a.silentAtHome || b.silent - a.silent,
 );
-function resolvedSilent(resolved: Resolutions) {
-  return RESIDENTS.filter(
-    (r) =>
-      r.checkInStatus === "silent" &&
-      resolved[r.id] &&
-      resolved[r.id] !== "silent" &&
-      resolved[r.id] !== "helpOnWay",
-  ).length;
+/** The static Elm District count inside Dallas County, replaced by the live simulation count. */
+const ELM_STATIC = DISTRICTS.find((d) => d.id === "elm")?.silentAtHome ?? 0;
+export function countySilentAtHome(c: CountyResponse, elmUnconfirmed: number) {
+  return c.geoid === DEMO_COUNTY
+    ? Math.max(0, c.silentAtHome - ELM_STATIC + elmUnconfirmed)
+    : c.silentAtHome;
 }
-export function unconfirmed(resolved: Resolutions) {
-  return TEXAS_TOTALS.silentAtHome - resolvedSilent(resolved);
+export function texasUnconfirmed(elmUnconfirmed: number) {
+  return TEXAS_TOTALS.silentAtHome - ELM_STATIC + elmUnconfirmed;
 }
-export function accountedFor(resolved: Resolutions) {
-  return TEXAS_TOTALS.enrolled - unconfirmed(resolved);
-}
-export function countySilentAtHome(c: CountyResponse, resolved: Resolutions) {
-  return c.geoid === DEMO_COUNTY ? c.silentAtHome - resolvedSilent(resolved) : c.silentAtHome;
-}
-export function markerState(r: Resident, resolved: Resolutions) {
-  const status = resolved[r.id] ?? r.checkInStatus;
-  if (status === "needsHelp" || status === "helpOnWay") return "help";
-  if (r.planAnswer === null) return status === "safe" ? "safe" : "unknown";
-  if (r.planAnswer !== "home") return "away";
-  return status === "safe" ? "safe" : "danger";
-}
-
-/** Urgency score: lives alone, age, language barrier, and hours silent. */
-export function urgencyScore(r: Resident) {
-  return (
-    (r.livesAlone ? 3 : 0) +
-    (r.age >= 70 ? 3 : 0) +
-    (r.language !== "English" ? 2 : 0) +
-    Math.min(r.silentHours, 4)
-  );
+export function texasAccountedFor(elmUnconfirmed: number) {
+  return TEXAS_TOTALS.enrolled - texasUnconfirmed(elmUnconfirmed);
 }

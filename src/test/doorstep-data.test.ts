@@ -7,13 +7,14 @@ import {
   groupFor,
   districtCount,
   accountedFor,
-  unconfirmed,
+  countySilentAtHome,
+  texasAccountedFor,
+  texasUnconfirmed,
   TEXAS_COUNTIES,
   TEXAS_TOTALS,
   COUNTIES_BY_PRIORITY,
   DEMO_COUNTY,
 } from "@/lib/doorstep-data";
-const baseline = TEXAS_TOTALS.enrolled - TEXAS_TOTALS.silentAtHome;
 describe("Response priorities", () => {
   it("uses the brief's neighborhood urgency thresholds", () => {
     expect([0, 1, 3, 4, 8, 9].map(urgency)).toEqual([
@@ -49,20 +50,13 @@ describe("Response priorities", () => {
     expect(groupFor(by("427"))).toBe("call");
     expect(groupFor(by("433"))).toBe("unknown");
   });
-  it("a safe neighbor reply removes danger and increments the live counter", () => {
-    const r = RESIDENTS.find((r) => r.id === "412");
-    const elm = DISTRICTS.find((d) => d.id === "elm");
-    if (!r || !elm) throw Error("Missing Elm demo");
-    expect(districtCount(elm, {})).toBe(3);
-    expect(markerState(r, {})).toBe("danger");
-    expect(markerState(r, { "412": "safe" })).toBe("safe");
-    expect(districtCount(elm, { "412": "safe" })).toBe(2);
-    expect(accountedFor({})).toBe(baseline);
-    expect(accountedFor({ "412": "safe" })).toBe(baseline + 1);
-    expect(unconfirmed({ "412": "safe" })).toBe(TEXAS_TOTALS.silentAtHome - 1);
-  });
-  it("dispatching a welfare check does not falsely count a person safe", () => {
-    expect(accountedFor({ "433": "helpOnWay" })).toBe(baseline);
+  it("uses the live Elm count and static counts elsewhere", () => {
+    const elm = DISTRICTS.find((d) => d.id === "elm")!;
+    const canyon = DISTRICTS.find((d) => d.id === "canyon")!;
+    expect(districtCount(elm, 7)).toBe(7);
+    expect(districtCount(canyon, 7)).toBe(8);
+    expect(accountedFor(0) + 32).toBe(12000);
+    expect(accountedFor(5)).toBe(accountedFor(0) - 5);
   });
 });
 describe("Statewide mock data", () => {
@@ -78,7 +72,14 @@ describe("Statewide mock data", () => {
   });
   it("puts the Richardson demo county at the top and covers its neighborhoods", () => {
     expect(COUNTIES_BY_PRIORITY[0]?.geoid).toBe(DEMO_COUNTY);
-    const richardson = DISTRICTS.reduce((n, d) => n + districtCount(d, {}), 0);
+    const richardson = DISTRICTS.reduce((n, d) => n + districtCount(d, 3), 0);
     expect(COUNTIES_BY_PRIORITY[0]!.silentAtHome).toBeGreaterThanOrEqual(richardson);
+  });
+  it("swaps Elm's static count for the live simulation count", () => {
+    const dallas = TEXAS_COUNTIES.find((c) => c.geoid === DEMO_COUNTY)!;
+    expect(countySilentAtHome(dallas, 3)).toBe(dallas.silentAtHome);
+    expect(countySilentAtHome(dallas, 10)).toBe(dallas.silentAtHome + 7);
+    expect(texasUnconfirmed(3)).toBe(TEXAS_TOTALS.silentAtHome);
+    expect(texasAccountedFor(2)).toBe(texasAccountedFor(3) + 1);
   });
 });

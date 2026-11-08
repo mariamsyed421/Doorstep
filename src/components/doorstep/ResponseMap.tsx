@@ -18,10 +18,11 @@ import {
   RESIDENTS,
   countySilentAtHome,
   districtCount,
-  markerState,
   urgency,
-  type Resolutions,
 } from "@/lib/doorstep-data";
+import type { MarkerState } from "@/lib/doorstep/simulation";
+import type { Assessment } from "@/lib/doorstep/scoring";
+import type { OutageEvent } from "@/lib/doorstep/outages";
 import { TEXAS_BOUNDS } from "@/lib/texas-boundary";
 import {
   boundsCenter,
@@ -40,7 +41,13 @@ setWorkerUrl(workerUrl);
 interface Props {
   district: string | null;
   county: string | null;
-  resolved: Resolutions;
+  markers: Record<string, MarkerState>;
+  assessments: Record<string, Assessment>;
+  outages: OutageEvent[];
+  elmUnconfirmed: number;
+  /** Priority filter from the queue: only these residents get markers. */
+  visible: Set<string>;
+  heatmap: boolean;
   selected: string | null;
   walking: string | null;
   onDistrict: (id: string | null) => void;
@@ -68,7 +75,7 @@ const fallbackStyle: StyleSpecification = {
 };
 const colors = { red: "#c82018", orange: "#956008", amber: "#edb34c", quiet: "#767d85" };
 // Attach mock response figures so county fills and tooltips can read them from the source.
-function withResponse(counties: Counties, resolved: Resolutions): FeatureCollection {
+function withResponse(counties: Counties, elmUnconfirmed: number): FeatureCollection {
   return {
     type: "FeatureCollection",
     features: counties.features.map((feature) => {
@@ -77,7 +84,7 @@ function withResponse(counties: Counties, resolved: Resolutions): FeatureCollect
         ...feature,
         properties: {
           ...feature.properties,
-          home: response ? countySilentAtHome(response, resolved) : 0,
+          home: response ? countySilentAtHome(response, elmUnconfirmed) : 0,
           enrolled: response?.enrolled ?? 0,
           alone: response?.liveAloneSilent ?? 0,
         },
@@ -461,9 +468,9 @@ export default function ResponseMap(props: Props) {
     const map = mapRef.current;
     if (!ready || !map || !counties) return;
     (map.getSource("texas-counties") as GeoJSONSource).setData(
-      withResponse(counties, props.resolved),
+      withResponse(counties, props.elmUnconfirmed),
     );
-  }, [counties, props.resolved, ready]);
+  }, [counties, props.elmUnconfirmed, ready]);
 
   // Follow county picks made outside the map, such as the priority list.
   useEffect(() => {
@@ -577,7 +584,7 @@ export default function ResponseMap(props: Props) {
       markers.forEach((m) => m.remove());
       popups.forEach((p) => p.remove());
     };
-  }, [overview, props.district, props.resolved, ready]);
+  }, [overview, props.district, props.elmUnconfirmed, ready]);
 
   useEffect(() => {
     const map = mapRef.current;
