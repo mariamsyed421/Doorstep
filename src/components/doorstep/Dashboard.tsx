@@ -370,16 +370,9 @@ export function Dashboard() {
       <header className="dashboard-header">
         <div className="flex min-w-0 items-center gap-3">
           <DoorstepBear className="size-10" />
-          <div>
-            <h1 className="font-display text-2xl font-bold tracking-tight">
-              Doorstep<span className="text-brand">.</span>
-            </h1>
-            <p className="text-[11px] text-muted-foreground">Catastrophe response</p>
-          </div>
-        </div>
-        <div className="header-context">
-          <span className="text-sm font-medium">Texas operations</span>
-          <span className="text-xs text-muted-foreground">State Farm</span>
+          <h1 className="font-display text-2xl font-bold tracking-tight">
+            Doorstep<span className="text-brand">.</span>
+          </h1>
         </div>
         <div className="header-actions flex items-center gap-3 md:gap-5">
           <span className="hidden items-center gap-2 text-xs text-muted-foreground sm:flex">
@@ -387,12 +380,6 @@ export function Dashboard() {
               className={cn("size-1.5 rounded-full", sim.running ? "bg-brand" : "bg-unknown")}
             />
             {sim.running ? "Simulation running" : "Simulation paused"}
-          </span>
-          <span
-            className="operator-avatar hidden size-9 items-center justify-center rounded-md border border-border text-xs font-semibold lg:flex"
-            aria-label="Operator MS"
-          >
-            MS
           </span>
         </div>
       </header>

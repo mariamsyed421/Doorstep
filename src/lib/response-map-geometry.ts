@@ -75,3 +75,13 @@ export function mapPadding(width: number, height: number) {
     right: Math.min(60, Math.round(width * 0.1)),
   };
 }
+
+// The statewide view needs less room: tighter padding keeps Texas filling the map.
+export function statePadding(width: number, height: number) {
+  return {
+    top: Math.min(72, Math.round(height * 0.1)),
+    bottom: Math.min(36, Math.round(height * 0.05)),
+    left: Math.min(32, Math.round(width * 0.04)),
+    right: Math.min(32, Math.round(width * 0.04)),
+  };
+}

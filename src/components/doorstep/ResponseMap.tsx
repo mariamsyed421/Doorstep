@@ -30,6 +30,7 @@ import {
   countyAt,
   countyBounds,
   mapPadding,
+  statePadding,
   type Counties,
   type County,
   type MapBounds,
@@ -251,19 +252,22 @@ export default function ResponseMap(props: Props) {
     }
   }, []);
 
-  const fit = useCallback((bounds: MapBounds, pitch: number, maxZoom = 19, animate = true) => {
-    const map = mapRef.current;
-    if (!map) return;
-    const { clientWidth, clientHeight } = map.getContainer();
-    map.stop();
-    map.fitBounds(bounds, {
-      padding: mapPadding(clientWidth, clientHeight),
-      pitch,
-      bearing: 0,
-      maxZoom,
-      duration: animate && !reducedMotion() ? 1400 : 0,
-    });
-  }, []);
+  const fit = useCallback(
+    (bounds: MapBounds, pitch: number, maxZoom = 19, animate = true, padding = mapPadding) => {
+      const map = mapRef.current;
+      if (!map) return;
+      const { clientWidth, clientHeight } = map.getContainer();
+      map.stop();
+      map.fitBounds(bounds, {
+        padding: padding(clientWidth, clientHeight),
+        pitch,
+        bearing: 0,
+        maxZoom,
+        duration: animate && !reducedMotion() ? 1400 : 0,
+      });
+    },
+    [],
+  );
 
   const clearDistrict = useCallback(() => {
     if (latest.current.district) {
@@ -275,7 +279,7 @@ export default function ResponseMap(props: Props) {
   const returnToTexas = useCallback(() => {
     setSelection(null);
     clearDistrict();
-    fit(boundsRef.current, 0);
+    fit(boundsRef.current, 0, 19, true, statePadding);
   }, [clearDistrict, fit, setSelection]);
 
   const selectCounty = useCallback(
@@ -329,7 +333,7 @@ export default function ResponseMap(props: Props) {
         style: "https://tiles.openfreemap.org/styles/positron",
         bounds: initialBounds,
         fitBoundsOptions: {
-          padding: mapPadding(container.current.clientWidth, container.current.clientHeight),
+          padding: statePadding(container.current.clientWidth, container.current.clientHeight),
         },
         minZoom: 2,
         maxZoom: 19,
@@ -435,7 +439,7 @@ export default function ResponseMap(props: Props) {
     };
     const onResize = () => {
       if (!countyRef.current && !latest.current.district && map.getZoom() < 10)
-        fit(boundsRef.current, 0, 19, false);
+        fit(boundsRef.current, 0, 19, false, statePadding);
     };
     map.on("load", onLoad);
     map.on("error", onError);
@@ -461,7 +465,8 @@ export default function ResponseMap(props: Props) {
   useEffect(() => {
     const map = mapRef.current;
     if (!ready || !map || !counties) return;
-    if (!countyRef.current && !latest.current.district) fit(boundsRef.current, 0, 19, false);
+    if (!countyRef.current && !latest.current.district)
+      fit(boundsRef.current, 0, 19, false, statePadding);
   }, [counties, fit, ready]);
 
   useEffect(() => {
