@@ -22,6 +22,12 @@ const SYSTEM = `You help disaster-response coordinators triage short replies fro
 Return ONLY a JSON object. Never invent facts. Never recommend dispatching responders yourself;
 recommend coordinator review instead. Never include personal data that was not in the input.`;
 
+console.log("[ai] service loaded", {
+  AI_PROVIDER: env("AI_PROVIDER") ?? "nemotron",
+  NEMOTRON_MODEL: env("NEMOTRON_MODEL") ?? "nvidia/llama-3.3-nemotron-super-49b-v1",
+  NVIDIA_API_KEY_SET: Boolean(env("NVIDIA_API_KEY")),
+});
+
 async function withTimeout<T>(
   fn: (signal: AbortSignal) => Promise<T>,
   ms = TIMEOUT_MS,
@@ -74,7 +80,12 @@ async function openAiCompatible(
   };
   const message = data.choices?.[0]?.message;
   const content = message?.content ?? message?.reasoning_content;
-  if (!content) throw new Error("Empty model response");
+  if (!content) {
+    if (model === (env("NEMOTRON_MODEL") ?? "nvidia/llama-3.3-nemotron-super-49b-v1")) {
+      console.log("[ai] Nemotron returned empty content");
+    }
+    throw new Error("Empty model response");
+  }
   return content;
 }
 
@@ -85,7 +96,14 @@ function nemotron(): Caller | null {
   if (!key) return null;
   const base = env("NVIDIA_API_BASE_URL") ?? "https://integrate.api.nvidia.com/v1";
   const model = env("NEMOTRON_MODEL") ?? "nvidia/llama-3.3-nemotron-super-49b-v1";
-  return (p, s) => openAiCompatible(`${base}/chat/completions`, key, model, p, s);
+  return async (p, s) => {
+    try {
+      return await openAiCompatible(`${base}/chat/completions`, key, model, p, s);
+    } catch (error) {
+      console.log("[ai] Nemotron call failed:", error instanceof Error ? error.message : error);
+      throw error;
+    }
+  };
 }
 
 function gemini(): Caller | null {
@@ -137,6 +155,10 @@ function providerChain(): { name: Exclude<AiProvider, "rules">; call: Caller }[]
   return chain.filter((x): x is NonNullable<typeof x> => Boolean(x));
 }
 
+function logAiResult(provider: Exclude<AiProvider, "rules"> | "rules", startedAt: number) {
+  console.log(`[ai] answer provider=${provider} duration_ms=${Date.now() - startedAt}`);
+}
+
 async function run<S extends z.ZodTypeAny>(
   prompt: string,
   schema: S,
@@ -174,6 +196,7 @@ export async function classifyReply(
   text: string,
   preferred: Language = "English",
 ): Promise<ClassificationResult> {
+  const startedAt = Date.now();
   const rules = classifyWithRules(text, preferred);
   const prompt = `Classify this resident reply to a post-disaster welfare check-in. Preferred language: ${preferred}.
 Reply: """${text.slice(0, 1000)}"""
@@ -182,7 +205,11 @@ urgency (routine|elevated|urgent), needs (array of power_medical|medical|transpo
 detectedLanguage, translation (concise English), explanation (one sentence), recommendedAction (one sentence, coordinator-facing), confidence (0-1).
 Explicit requests for urgent help or loss of power to medical equipment are urgent_assistance.`;
   const out = await run(prompt, ClassificationSchema);
-  if (!out) return { ...rules, uncertain: true };
+  if (!out) {
+    logAiResult("rules", startedAt);
+    return { ...rules, uncertain: true };
+  }
+  logAiResult(out.provider, startedAt);
   return mergeWithRules(
     { ...out.value, provider: out.provider, uncertain: out.value.confidence < 0.6 },
     rules,
@@ -190,22 +217,30 @@ Explicit requests for urgent help or loss of power to medical equipment are urge
 }
 
 export async function draftCheckIn(language: Language, stage: 0 | 1, firstName: string) {
+  const startedAt = Date.now();
   const template = checkInTemplate({ language }, stage);
   const out = await run(
     `Write a short, calm SMS welfare check-in in ${language} for ${firstName} after a severe storm. It must ask them to reply 1 if safe or 2 if they need help. Max 300 characters. JSON: {"message": string}`,
     CheckInMessageSchema,
   );
-  return out
-    ? { message: out.value.message, provider: out.provider }
-    : { message: template, provider: "rules" as const };
+  if (!out) {
+    logAiResult("rules", startedAt);
+    return { message: template, provider: "rules" as const };
+  }
+  logAiResult(out.provider, startedAt);
+  return { message: out.value.message, provider: out.provider };
 }
 
 export async function summarizeCase(name: string, facts: string[]) {
+  const startedAt = Date.now();
   const out = await run(
     `Summarize this disaster-response case for a coordinator in 2-3 sentences. Use only these facts; do not speculate about injury. Name: ${name}. Facts:\n- ${facts.join("\n- ")}\nJSON: {"summary": string}`,
     SummarySchema,
   );
-  return out
-    ? { summary: out.value.summary, provider: out.provider }
-    : { summary: summarizeWithRules(name, facts), provider: "rules" as const };
+  if (!out) {
+    logAiResult("rules", startedAt);
+    return { summary: summarizeWithRules(name, facts), provider: "rules" as const };
+  }
+  logAiResult(out.provider, startedAt);
+  return { summary: out.value.summary, provider: out.provider };
 }
