@@ -10,7 +10,7 @@ interface Props {
   urgent: boolean;
   delay: number;
   tag?: string | null;
-  state?: "safe" | "help" | "danger" | "away" | "unknown";
+  state?: "safe" | "help" | "danger" | "awaiting" | "away" | "unknown";
   selected: boolean;
   onClick: () => void;
 }
@@ -75,6 +75,7 @@ export function House({
           tag ? "opacity-100 text-muted-foreground" : "opacity-0",
           state === "help" && "font-semibold text-alert",
           state === "danger" && "font-semibold text-danger",
+          state === "awaiting" && "font-semibold text-light",
           state === "away" && "text-[11px] italic",
         )}
         title={tag ?? undefined}

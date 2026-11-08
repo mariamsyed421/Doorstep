@@ -12,14 +12,10 @@ import {
 import type { FeatureCollection, Polygon } from "geojson";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import { Button } from "@/components/ui/button";
-import {
-  DISTRICTS,
-  RESIDENTS,
-  districtCount,
-  markerState,
-  urgency,
-  type Resolutions,
-} from "@/lib/doorstep-data";
+import { DISTRICTS, RESIDENTS, districtCount, urgency } from "@/lib/doorstep-data";
+import type { MarkerState } from "@/lib/doorstep/simulation";
+import type { Assessment } from "@/lib/doorstep/scoring";
+import type { OutageEvent } from "@/lib/doorstep/outages";
 import { TEXAS_BOUNDS } from "@/lib/texas-boundary";
 import {
   boundsCenter,
@@ -37,7 +33,13 @@ setWorkerUrl(workerUrl);
 
 interface Props {
   district: string | null;
-  resolved: Resolutions;
+  markers: Record<string, MarkerState>;
+  assessments: Record<string, Assessment>;
+  outages: OutageEvent[];
+  elmUnconfirmed: number;
+  /** Priority filter from the queue: only these residents get markers. */
+  visible: Set<string>;
+  heatmap: boolean;
   selected: string | null;
   walking: string | null;
   onDistrict: (id: string | null) => void;
@@ -76,12 +78,65 @@ function markerButton(label: string, className: string) {
   return button;
 }
 
-function tooltipContent(title: string, detail: string) {
+function tooltipContent(title: string, ...details: string[]) {
   const content = document.createElement("div");
   const strong = document.createElement("strong");
   strong.textContent = title;
-  content.append(strong, document.createElement("br"), document.createTextNode(detail));
+  content.append(strong);
+  for (const detail of details) content.append(document.createElement("br"), detail);
   return content;
+}
+
+/** Approximate a circle of `meters` around [lng, lat] as a GeoJSON ring. */
+function circle(lng: number, lat: number, meters: number, steps = 64): Polygon {
+  const dLat = meters / 111_320;
+  const dLng = meters / (111_320 * Math.cos((lat * Math.PI) / 180));
+  const ring = Array.from({ length: steps + 1 }, (_, i) => {
+    const a = (i / steps) * 2 * Math.PI;
+    return [lng + dLng * Math.cos(a), lat + dLat * Math.sin(a)];
+  });
+  return { type: "Polygon", coordinates: [ring] };
+}
+
+/** Simulated outage zones and the Elm silence heatmap, drawn under the place labels. */
+function addSimulationLayers(map: GLMap) {
+  const labels = map.getStyle().layers.find((layer) => layer.type === "symbol")?.id;
+  map.addSource("silence-heat", { type: "geojson", data: EMPTY_COLLECTION });
+  map.addLayer(
+    {
+      id: "silence-heat",
+      type: "fill",
+      source: "silence-heat",
+      paint: { "fill-color": colors.red, "fill-opacity": ["get", "opacity"] },
+    },
+    labels,
+  );
+  map.addSource("outage-zones", { type: "geojson", data: EMPTY_COLLECTION });
+  map.addLayer(
+    {
+      id: "outage-fill",
+      type: "fill",
+      source: "outage-zones",
+      paint: {
+        "fill-color": ["match", ["get", "type"], "power", colors.orange, colors.quiet],
+        "fill-opacity": ["match", ["get", "type"], "power", 0.1, 0.06],
+      },
+    },
+    labels,
+  );
+  map.addLayer(
+    {
+      id: "outage-line",
+      type: "line",
+      source: "outage-zones",
+      paint: {
+        "line-color": ["match", ["get", "type"], "power", colors.orange, "#26282c"],
+        "line-width": 1.5,
+        "line-dasharray": [4, 4],
+      },
+    },
+    labels,
+  );
 }
 
 function tooltip(
@@ -342,6 +397,7 @@ export default function ResponseMap(props: Props) {
     const onLoad = () => {
       if (!active) return;
       addResponseLayers(map);
+      addSimulationLayers(map);
       setReady(true);
       syncView();
     };
@@ -416,7 +472,7 @@ export default function ResponseMap(props: Props) {
             coordinateBounds(district.polygon.map(([lat, lng]) => [lng, lat])),
           ),
         },
-        properties: { count: districtCount(district, props.resolved) },
+        properties: { count: districtCount(district, props.elmUnconfirmed) },
       })),
     });
     const districts: FeatureCollection<Polygon> = {
@@ -433,15 +489,15 @@ export default function ResponseMap(props: Props) {
                 properties: {
                   district: district.id,
                   name: district.name,
-                  count: districtCount(district, props.resolved),
+                  count: districtCount(district, props.elmUnconfirmed),
                   alone: district.liveAloneSilent,
-                  color: colors[urgency(districtCount(district, props.resolved))],
+                  color: colors[urgency(districtCount(district, props.elmUnconfirmed))],
                 },
               };
             }),
     };
     (map.getSource("response-districts") as GeoJSONSource).setData(districts);
-  }, [props.district, props.resolved, ready]);
+  }, [props.district, props.elmUnconfirmed, ready]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -471,7 +527,7 @@ export default function ResponseMap(props: Props) {
       );
     } else {
       DISTRICTS.forEach((district) => {
-        const count = districtCount(district, props.resolved);
+        const count = districtCount(district, props.elmUnconfirmed);
         const position = boundsCenter(
           coordinateBounds(district.polygon.map(([lat, lng]) => [lng, lat])),
         );
@@ -506,41 +562,133 @@ export default function ResponseMap(props: Props) {
       markers.forEach((m) => m.remove());
       popups.forEach((p) => p.remove());
     };
-  }, [fit, overview, props.district, props.resolved, ready, setSelection]);
+  }, [fit, overview, props.district, props.elmUnconfirmed, ready, setSelection]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!ready || !map || props.district !== "elm") return;
     const popups: Popup[] = [];
-    const markers = RESIDENTS.map((resident) => {
-      const state = markerState(resident, props.resolved);
-      const element = markerButton(`${resident.name}, ${resident.address}`, "household-marker");
-      const dot = document.createElement("span");
-      dot.className = `porch-dot ${state}`;
-      dot.textContent = state === "unknown" ? "?" : state === "away" ? "↗" : "";
-      element.append(dot);
-      element.addEventListener("click", (event) => {
-        event.stopPropagation();
-        latest.current.onSelect(resident.id);
-      });
-      const position: [number, number] = [resident.lng, resident.lat];
-      const marker = new Marker({ element }).setLngLat(position).addTo(map);
-      popups.push(
-        tooltip(
-          map,
-          element,
-          position,
-          tooltipContent(`${resident.shortName} · ${resident.address}`, `“${resident.planQuote}”`),
-          props.selected === resident.id,
-        ),
-      );
-      return marker;
-    });
+    const markers = RESIDENTS.filter((resident) => props.visible.has(resident.id)).map(
+      (resident) => {
+        const state = props.markers[resident.id] ?? "unknown";
+        const selected = props.selected === resident.id;
+        const element = markerButton(
+          `${resident.name}, ${resident.address}`,
+          `household-marker${selected ? " is-selected" : ""}`,
+        );
+        const dot = document.createElement("span");
+        dot.className = `porch-dot ${state}`;
+        dot.textContent = state === "unknown" ? "?" : state === "away" ? "↗" : "";
+        element.append(dot);
+        element.addEventListener("click", (event) => {
+          event.stopPropagation();
+          latest.current.onSelect(resident.id);
+        });
+        const position: [number, number] = [resident.lng, resident.lat];
+        const marker = new Marker({ element }).setLngLat(position).addTo(map);
+        popups.push(
+          tooltip(
+            map,
+            element,
+            position,
+            tooltipContent(
+              `${resident.shortName} · ${resident.address}`,
+              ...(props.assessments[resident.id]
+                ? [
+                    `Score ${props.assessments[resident.id]!.score} · ${props.assessments[resident.id]!.level.toUpperCase()}`,
+                  ]
+                : []),
+              `“${resident.planQuote}”`,
+            ),
+            selected,
+          ),
+        );
+        return marker;
+      },
+    );
     return () => {
       markers.forEach((m) => m.remove());
       popups.forEach((p) => p.remove());
     };
-  }, [props.district, props.resolved, props.selected, ready]);
+  }, [props.district, props.markers, props.assessments, props.visible, props.selected, ready]);
+
+  // Queue → map sync: fly to the selected household at street zoom.
+  useEffect(() => {
+    const map = mapRef.current;
+    const resident = RESIDENTS.find((r) => r.id === props.selected);
+    if (!ready || !map || !resident || props.district !== "elm") return;
+    map.flyTo({
+      center: [resident.lng, resident.lat],
+      zoom: Math.max(map.getZoom(), 18.5),
+      duration: reducedMotion() ? 0 : 800,
+    });
+  }, [props.selected, props.district, ready]);
+
+  // Simulated outage zones (labeled SIMULATED on hover).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map) return;
+    const active = props.outages.filter((o) => o.active);
+    (map.getSource("outage-zones") as GeoJSONSource).setData({
+      type: "FeatureCollection",
+      features: active.map((o) => ({
+        type: "Feature",
+        properties: { id: o.id, type: o.type },
+        geometry: circle(o.center.lng, o.center.lat, o.radiusMeters),
+      })),
+    });
+    const popup = new Popup({
+      closeButton: false,
+      closeOnClick: false,
+      offset: 12,
+      maxWidth: "270px",
+    });
+    const onMove = (event: MapMouseEvent) => {
+      const hit = map.queryRenderedFeatures(event.point, { layers: ["outage-fill"] })[0];
+      const o = hit && active.find((x) => x.id === hit.properties["id"]);
+      if (!o) {
+        popup.remove();
+        return;
+      }
+      popup
+        .setLngLat(event.lngLat)
+        .setDOMContent(
+          tooltipContent(
+            o.label,
+            `SIMULATED · ${o.source}`,
+            `~${o.estimatedHouseholds} households · ${o.severity} · confidence ${Math.round(o.confidence * 100)}%`,
+          ),
+        )
+        .addTo(map);
+    };
+    map.on("mousemove", onMove);
+    return () => {
+      map.off("mousemove", onMove);
+      popup.remove();
+    };
+  }, [props.outages, ready]);
+
+  // Silence heatmap over Elm District households that are still unconfirmed.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map) return;
+    const show = props.heatmap && props.district === "elm";
+    (map.getSource("silence-heat") as GeoJSONSource).setData({
+      type: "FeatureCollection",
+      features: show
+        ? RESIDENTS.filter((r) =>
+            ["danger", "awaiting", "unknown", "away"].includes(props.markers[r.id] ?? ""),
+          ).map((r) => {
+            const w = Math.min(1, (props.assessments[r.id]?.score ?? 0) / 20);
+            return {
+              type: "Feature",
+              properties: { opacity: 0.12 + w * 0.3 },
+              geometry: circle(r.lng, r.lat, 22 + w * 30),
+            };
+          })
+        : [],
+    });
+  }, [props.heatmap, props.district, props.markers, props.assessments, ready]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -564,7 +712,10 @@ export default function ResponseMap(props: Props) {
       map,
       element,
       position,
-      tooltipContent(resident.neighbor.name, "On the way"),
+      tooltipContent(
+        resident.neighbor.name,
+        `${resident.neighbor.name.split(" ")[0]} is on the way`,
+      ),
       true,
     );
     let frame = 0;

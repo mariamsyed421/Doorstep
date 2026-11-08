@@ -1,11 +1,12 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { ClientOnly } from "@tanstack/react-router";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { motion, useReducedMotion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft,
   ArrowRight,
   Check,
   ChevronRight,
+  Flame,
   Footprints,
   Layers,
   MapPin,
@@ -15,95 +16,222 @@ import {
   ShieldCheck,
   Square,
   X,
-  Phone as PhoneIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from "@/components/ui/sheet";
-import {
-  urgencyScore,
   RESIDENTS,
   DISTRICTS,
-  groupFor,
-  planLabel,
+  CITY_TOTAL,
+  OTHER_DISTRICTS_UNCONFIRMED,
   districtCount,
   accountedFor,
+  urgency,
   type Resident,
-  type Resolutions,
-  type ResponseStatus,
 } from "@/lib/doorstep-data";
+import {
+  classify,
+  health,
+  inbox,
+  loadShelters,
+  recordEscalation,
+  sendCheckin,
+  type Integrations,
+} from "@/lib/doorstep/api";
+import { activeOutagesAt } from "@/lib/doorstep/outages";
+import type { Shelter } from "@/lib/doorstep/resources";
+import { ClassificationResultSchema } from "@/lib/doorstep/schemas";
+import { levelRank } from "@/lib/doorstep/scoring";
+import {
+  CONTACT_RESPONSES,
+  assessAll,
+  markerFor,
+  seededState,
+  simReducer,
+  wallClock,
+  formatClock,
+  type MarkerState,
+  type Message,
+} from "@/lib/doorstep/simulation";
 import { cn } from "@/lib/utils";
 import { StreetView } from "./StreetView";
 import { DoorstepBear, MapLoadingState } from "./DoorstepBear";
 import { IncidentGuide } from "./IncidentGuide";
+import { PriorityQueue } from "./PriorityQueue";
+import { ResidentDetail } from "./ResidentDetail";
+import { SimControls } from "./SimControls";
+import { matchesFilter, matchesSearch, queueOrder, type QueueFilter } from "./logic";
 const ResponseMap = lazy(() => import("./ResponseMap"));
-type Log = { time: string; text: string };
-const groups = [
-  { key: "check", title: "Check the house now", tone: "text-danger", border: "border-danger/50" },
-  { key: "call", title: "Call their contact", tone: "text-primary", border: "border-primary/40" },
-  { key: "unknown", title: "Unknown", tone: "text-muted-foreground", border: "border-border" },
-] as const;
+const COORDINATOR = "Coordinator MS";
+
+const DEMO_CAPTIONS: [number, string][] = [
+  [5, "Event 1 · Severe thunderstorm incident opened"],
+  [20, "Event 2 · Initial check-ins sent in preferred languages"],
+  [60, "Event 3 · Residents confirming safety"],
+  [66, "Event 4 · Simulated Ting outage detected"],
+  [75, "Event 5–6 · Signal Fusion re-scored · queue re-ranked"],
+  [95, "Mr. Haddad: power out + oxygen → urgent human review"],
+  [128, "Event 7–8 · Spanish request classified · resources suggested"],
+  [186, "Escalations advancing · coordinator approvals requested"],
+];
+
 export function Dashboard() {
+  const [sim, dispatch] = useReducer(simReducer, undefined, () => seededState());
   const [district, setDistrict] = useState<string | null>(null);
   const [streetView, setStreetView] = useState(true);
-  const [resolved, setResolved] = useState<Resolutions>({});
+  const [heatmap, setHeatmap] = useState(true);
   const [selected, setSelected] = useState<string | null>(null);
   const [drawer, setDrawer] = useState(false);
   const [phone, setPhone] = useState<string | null>(null);
   const [phoneMode, setPhoneMode] = useState<"neighbor" | "contact">("neighbor");
   const [replies, setReplies] = useState<Record<string, string>>({});
+  const [noAnswer, setNoAnswer] = useState<Record<string, boolean>>({});
   const [pending, setPending] = useState<Record<string, string>>({});
-  const [logs, setLogs] = useState<Record<string, Log[]>>({});
   const [walking, setWalking] = useState<string | null>(null);
+  const [filter, setFilter] = useState<QueueFilter>("all");
+  const [search, setSearch] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [shelters, setShelters] = useState<{
+    shelters: Shelter[];
+    source: string;
+    warning?: string;
+  } | null>(null);
+  const [integrations, setIntegrations] = useState<Integrations | null>(null);
+  const [realMessages, setRealMessages] = useState<Message[]>([]);
   const [demo, setDemo] = useState(false);
-  const [demoPhase, setDemoPhase] = useState(0);
+  const [demoStep, setDemoStep] = useState(0);
+  const [demoCaption, setDemoCaption] = useState("");
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const acc = useRef(0);
+  const enriching = useRef(new Set<string>());
   const reduce = useReducedMotion();
+
+  // ---------- Derived state: Signal Fusion recalculates on every simulation change ----------
+  const assessments = useMemo(() => assessAll(sim), [sim]);
+  const markers = useMemo(
+    () =>
+      Object.fromEntries(
+        RESIDENTS.map((r) => [r.id, markerFor(r, sim, assessments[r.id])]),
+      ) as Record<string, MarkerState>,
+    [sim, assessments],
+  );
+  const active = sim.incident.status === "active";
+  const unresolved = active ? RESIDENTS.filter((r) => markers[r.id] !== "safe") : [];
+  const elmUnconfirmed = unresolved.length;
+  const reviewNow = RESIDENTS.filter((r) => {
+    const a = assessments[r.id];
+    return active && a && levelRank(a.level) >= levelRank("high");
+  });
+  const inOutage = unresolved.filter((r) => activeOutagesAt(r, sim.outages).length > 0);
+  const ordered = useMemo(() => queueOrder(assessments), [assessments]);
+  const queue = ordered.filter(
+    (r) =>
+      matchesSearch(r, search) &&
+      matchesFilter(r, filter, sim, assessments[r.id], markers[r.id]) &&
+      (filter === "resolved" || assessments[r.id]?.level !== "resolved"),
+  );
+  const visible = useMemo(
+    () =>
+      new Set(
+        RESIDENTS.filter(
+          (r) =>
+            matchesSearch(r, search) &&
+            (filter === "all" || matchesFilter(r, filter, sim, assessments[r.id], markers[r.id])),
+        ).map((r) => r.id),
+      ),
+    [search, filter, sim, assessments, markers],
+  );
   const activeDistrict = DISTRICTS.find((d) => d.id === district);
   const person = RESIDENTS.find((r) => r.id === selected);
   const phonePerson = RESIDENTS.find((r) => r.id === phone);
-  const silent = RESIDENTS.filter((r) => (resolved[r.id] ?? r.checkInStatus) === "silent");
-  const priorityHomes = silent.filter((r) => groupFor(r) === "check");
-  const nextHome = [...silent]
-    .filter((r) => !pending[r.id])
-    .sort(
-      (a, b) =>
-        Number(groupFor(b) === "check") - Number(groupFor(a) === "check") ||
-        urgencyScore(b) - urgencyScore(a),
-    )[0];
   const ranked = [...DISTRICTS].sort(
-    (a, b) => districtCount(b, resolved) - districtCount(a, resolved),
+    (a, b) => districtCount(b, elmUnconfirmed) - districtCount(a, elmUnconfirmed),
   );
-  const resolvedHome = RESIDENTS.filter(
-    (r) =>
-      r.planAnswer === "home" &&
-      r.checkInStatus === "silent" &&
-      resolved[r.id] &&
-      resolved[r.id] !== "silent",
-  ).length;
+
+  // ---------- Simulation clock ----------
+  useEffect(() => {
+    if (!sim.running) return;
+    const tickMs = 250;
+    const id = setInterval(() => {
+      acc.current += (60 / sim.secondsPerSimHour) * (tickMs / 1000);
+      const whole = Math.floor(acc.current);
+      if (whole > 0) {
+        acc.current -= whole;
+        dispatch({ type: "advance", minutes: whole });
+      }
+    }, tickMs);
+    return () => clearInterval(id);
+  }, [sim.running, sim.secondsPerSimHour]);
+
+  // ---------- Backend wiring ----------
+  useEffect(() => {
+    void health().then(setIntegrations);
+    void loadShelters().then(setShelters);
+  }, []);
+  const aiConfigured = Boolean(integrations?.nemotron || integrations?.gemini);
+  // Upgrade rules-based classifications with Nemotron / Gemini when configured.
+  useEffect(() => {
+    for (const id of sim.enrich) {
+      if (enriching.current.has(id)) continue;
+      enriching.current.add(id);
+      const m = sim.messages.find((x) => x.id === id);
+      if (!m || !aiConfigured) {
+        dispatch({ type: "enrich_done", messageId: id });
+        continue;
+      }
+      void classify(m.text, m.residentId).then((c) =>
+        dispatch(
+          c.provider === "rules"
+            ? { type: "enrich_done", messageId: id }
+            : { type: "enriched", messageId: id, classification: c },
+        ),
+      );
+    }
+  }, [sim.enrich, sim.messages, aiConfigured]);
+  // Inbound replies persisted by /api/webhook (Supabase configured only).
+  useEffect(() => {
+    if (!integrations?.supabase) return;
+    const seen = new Set<string>();
+    let since = new Date().toISOString();
+    const id = setInterval(async () => {
+      for (const row of await inbox(since)) {
+        if (seen.has(row.id)) continue;
+        seen.add(row.id);
+        since = row.created_at;
+        const parsed = ClassificationResultSchema.safeParse(row.classification);
+        dispatch({
+          type: "reply",
+          residentId: row.resident_id,
+          text: row.reply,
+          ...(parsed.success ? { classification: parsed.data } : {}),
+        });
+      }
+    }, 5000);
+    return () => clearInterval(id);
+  }, [integrations?.supabase]);
+
   function later(ms: number, fn: () => void) {
     timers.current.push(setTimeout(fn, ms));
   }
-  function addLog(id: string, text: string, time = "5:02pm") {
-    setLogs((x) => ({ ...x, [id]: [...(x[id] ?? []), { time, text }] }));
-  }
-  function update(id: string, status: ResponseStatus) {
-    setResolved((x) => ({ ...x, [id]: status }));
+  function clearPending(id: string) {
+    setPending((x) => {
+      const n = { ...x };
+      delete n[id];
+      return n;
+    });
   }
   function openPerson(id: string) {
     setSelected(id);
     setDrawer(true);
   }
-  function act(r: Resident) {
+  /** Coordinator approval of a third-party step (3 contact, 4 neighbor, 5 welfare review). */
+  function approveAction(r: Resident, stage: 3 | 4 | 5 | null) {
+    if (stage === null) return openPerson(r.id);
+    dispatch({ type: "approve", residentId: r.id, stage, by: COORDINATOR });
+    void recordEscalation(r.id, stage, COORDINATOR);
     setSelected(r.id);
-    setDrawer(false);
-    const group = groupFor(r);
-    if (group === "check") {
+    if (stage === 4) {
+      setDrawer(false);
       setPhone(r.id);
       setPhoneMode("neighbor");
       setWalking(r.id);
@@ -113,25 +241,31 @@ export function Dashboard() {
         delete next[r.id];
         return next;
       });
-      addLog(r.id, `Neighbor ${r.neighbor.name.split(" ")[0]} asked to knock`);
-    } else if (group === "call") {
+    } else if (stage === 3) {
+      setDrawer(false);
       setPhone(r.id);
       setPhoneMode("contact");
+      setReplies((x) => {
+        const next = { ...x };
+        delete next[r.id];
+        return next;
+      });
       setPending((x) => ({ ...x, [r.id]: `Calling ${r.emergencyContact.name}…` }));
-      addLog(r.id, `Called ${r.emergencyContact.relation} ${r.emergencyContact.name}`);
       later(1800, () => {
-        setReplies((x) => ({ ...x, [r.id]: "He's here with me. His phone died, but he's safe." }));
-        update(r.id, "safe");
-        setPending((x) => {
-          const n = { ...x };
-          delete n[r.id];
-          return n;
+        const scripted = CONTACT_RESPONSES[r.id];
+        const text = scripted ?? "No answer — left a voicemail.";
+        setReplies((x) => ({ ...x, [r.id]: text }));
+        setNoAnswer((x) => ({ ...x, [r.id]: !scripted }));
+        dispatch({
+          type: "confirm",
+          residentId: r.id,
+          by: "contact",
+          outcome: scripted ? "safe" : "noAnswer",
+          text,
         });
-        addLog(r.id, `${r.emergencyContact.name} confirmed safe`, "5:15pm");
+        clearPending(r.id);
       });
     } else {
-      update(r.id, "helpOnWay");
-      addLog(r.id, "Welfare check dispatched · Crew 4 en route");
       setDrawer(true);
     }
   }
@@ -148,76 +282,132 @@ export function Dashboard() {
           : "No answer";
     setReplies((x) => ({ ...x, [id]: message }));
     setWalking(null);
-    setPending((x) => {
-      const n = { ...x };
-      delete n[id];
-      return n;
+    clearPending(id);
+    dispatch({
+      type: "confirm",
+      residentId: id,
+      by: "neighbor",
+      outcome: value === "okay" ? "safe" : value === "help" ? "needsHelp" : "noAnswer",
+      text: message,
     });
-    addLog(id, `${r.neighbor.name.split(" ")[0]}: ${message}`, "5:15pm");
-    if (value !== "none") update(id, value === "okay" ? "safe" : "needsHelp");
   }
+  async function simulateReply(text: string) {
+    if (!person) return;
+    setBusy(true);
+    const c = await classify(text, person.id);
+    dispatch({ type: "reply", residentId: person.id, text, classification: c });
+    setBusy(false);
+  }
+
+  async function sendRealCheckin() {
+    if (!person || !integrations?.photon || integrations.photonResidentId !== person.id) return;
+    setBusy(true);
+    try {
+      const out = await sendCheckin(person.id);
+      if (out.delivery.provider !== "photon") throw new Error("Photon delivery was not used");
+      setRealMessages((messages) => [
+        ...messages,
+        {
+          id: out.delivery.messageId || `photon-${Date.now()}`,
+          residentId: person.id,
+          at: sim.now,
+          direction: "out",
+          channel: "sms",
+          text: out.text,
+          from: "doorstep",
+          status: out.delivery.status,
+          provider: "photon",
+        },
+      ]);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // ---------- Scripted demo (Events 1–9) ----------
   function stopDemo() {
     timers.current.forEach(clearTimeout);
     timers.current = [];
     setDemo(false);
-    setDemoPhase(0);
+    setDemoStep(0);
+    setDemoCaption("");
+    dispatch({ type: "set_running", running: false });
   }
   function runDemo() {
     stopDemo();
+    dispatch({ type: "reset" });
+    dispatch({ type: "set_speed", secondsPerSimHour: 10 });
+    dispatch({ type: "set_running", running: true });
     setDemo(true);
-    setDemoPhase(1);
+    setDemoStep(1);
     setDistrict(null);
-    setResolved({});
+    setFilter("all");
+    setSearch("");
     setReplies({});
-    setLogs({});
+    setNoAnswer({});
     setPending({});
     setSelected(null);
     setDrawer(false);
     setPhone(null);
     setWalking(null);
-    later(2400, () => {
-      setDistrict("elm");
-      setDemoPhase(2);
-    });
-    later(4200, () => {
-      setSelected("412");
-      setDemoPhase(3);
-    });
-    later(6500, () => {
-      const r = RESIDENTS.find((r) => r.id === "412");
-      if (r) act(r);
-      setDemoPhase(4);
-    });
-    later(9500, () => {
-      answer("412", "okay");
-      setDemoPhase(5);
-    });
-    later(11500, () => {
-      // The city-wide response team confirms the other high-priority homes in parallel.
-      setResolved((x) => ({
-        ...x,
-        "438": "safe",
-        "452": "safe",
-      }));
-      setPhone(null);
-      setWalking(null);
-      setSelected(null);
-      setDistrict(null);
-      setDemoPhase(6);
-      ["438", "452"].forEach((id) => addLog(id, "Responder team confirmed safe", "5:16pm"));
-    });
-    later(14000, () => {
-      setDemo(false);
-      setDemoPhase(0);
-    });
   }
+  useEffect(() => {
+    if (!demo) return;
+    const caption = [...DEMO_CAPTIONS].find(([t]) => sim.now < t)?.[1];
+    if (caption && demoStep < 6) setDemoCaption(caption);
+    if (demoStep === 1 && sim.now >= 6) {
+      setDistrict("elm");
+      setStreetView(false);
+      setDemoStep(2);
+    } else if (demoStep === 2 && sim.now >= 96) {
+      openPerson("441");
+      setDemoStep(3);
+    } else if (demoStep === 3 && sim.now >= 128) {
+      setDrawer(false);
+      setSelected(null);
+      setDemoStep(4);
+    } else if (demoStep === 4 && sim.now >= 186) {
+      dispatch({ type: "set_running", running: false });
+      setDemoStep(6);
+      setDemoCaption("Event 9 · Coordinator approves a neighbor check for Mrs. Lopez");
+      setSelected("412");
+      later(1500, () => {
+        const r = RESIDENTS.find((x) => x.id === "412");
+        if (r) approveAction(r, 4);
+      });
+      later(4500, () => {
+        answer("412", "okay");
+        setDemoCaption("Neighbor confirmed Mrs. Lopez is safe · silence escalation stopped");
+      });
+      later(8000, () => {
+        setDemo(false);
+        setDemoStep(0);
+        setDemoCaption("");
+        setPhone(null);
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [demo, demoStep, sim.now]);
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
-  const actionLabel = (r: Resident) =>
-    groupFor(r) === "check"
-      ? "Send neighbor to knock"
-      : groupFor(r) === "call"
-        ? `Call ${r.emergencyContact.relation} (${r.emergencyContact.name})`
-        : "Dispatch welfare check";
+
+  const hoursAgo = Math.max(0, sim.now);
+  const unconfirmedTotal = active ? OTHER_DISTRICTS_UNCONFIRMED + elmUnconfirmed : 0;
+  const nextHome = ordered.find(
+    (r) =>
+      active &&
+      !pending[r.id] &&
+      !sim.welfare[r.id] &&
+      assessments[r.id] &&
+      levelRank(assessments[r.id]!.level) >= levelRank("high"),
+  );
+  const counts = [
+    { label: "Residents in the storm's path", value: CITY_TOTAL },
+    { label: "Accounted for", value: active ? accountedFor(elmUnconfirmed) : 0 },
+    { label: "Still unconfirmed", value: unconfirmedTotal },
+    { label: "Unresolved inside outage zones", value: inOutage.length },
+    { label: "Urgent / high review", value: reviewNow.length },
+  ];
+
   return (
     <div className="dashboard-shell">
       <header className="dashboard-header">
@@ -236,7 +426,10 @@ export function Dashboard() {
         </div>
         <div className="header-actions flex items-center gap-3 md:gap-5">
           <span className="hidden items-center gap-2 text-xs text-muted-foreground sm:flex">
-            <span className="size-1.5 rounded-full bg-brand" /> Live response
+            <span
+              className={cn("size-1.5 rounded-full", sim.running ? "bg-brand" : "bg-unknown")}
+            />
+            {sim.running ? "Simulation running" : "Simulation paused"}
           </span>
           <Button onClick={demo ? stopDemo : runDemo} className="h-11 gap-2 px-4">
             {demo ? <Square /> : <Play />} {demo ? "Stop demo" : "Run demo"}
@@ -258,13 +451,20 @@ export function Dashboard() {
             Richardson, Texas
           </h2>
           <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-            Severe thunderstorm · Saturday, November 7 · 3 hours ago
+            {sim.incident.type} · {sim.incident.startedLabel} ·{" "}
+            {active
+              ? `${Math.floor(hoursAgo / 60)}h ${hoursAgo % 60}m ago`
+              : "incident not yet opened"}{" "}
+            · {sim.incident.id}
           </p>
+          <div className="mt-3">
+            <SimControls sim={sim} dispatch={dispatch} disabled={demo} />
+          </div>
         </div>
         <IncidentGuide
-          priorityCount={priorityHomes.length}
-          unconfirmed={32 - (accountedFor(resolved) - 11968)}
-          pendingCount={silent.filter((r) => Boolean(pending[r.id])).length}
+          priorityCount={reviewNow.length}
+          unconfirmed={unconfirmedTotal}
+          pendingCount={Object.keys(pending).length}
           nextHome={nextHome}
           demo={demo}
           onReview={() => {
@@ -277,13 +477,15 @@ export function Dashboard() {
         <div className="incident-totals" aria-live="polite">
           <div>
             <p className="incident-number">
-              {accountedFor(resolved).toLocaleString()}
-              <span className="ml-2 text-sm font-normal text-muted-foreground">/ 12,000</span>
+              {active ? accountedFor(elmUnconfirmed).toLocaleString() : "—"}
+              <span className="ml-2 text-sm font-normal text-muted-foreground">
+                / {CITY_TOTAL.toLocaleString()}
+              </span>
             </p>
             <p className="mt-1 text-xs text-muted-foreground">Residents accounted for</p>
           </div>
           <div className="incident-unconfirmed">
-            <p className="incident-number text-danger">{32 - (accountedFor(resolved) - 11968)}</p>
+            <p className="incident-number text-danger">{active ? unconfirmedTotal : "—"}</p>
             <p className="mt-1 text-xs text-muted-foreground">Still unconfirmed</p>
           </div>
         </div>
@@ -294,7 +496,12 @@ export function Dashboard() {
             <Suspense fallback={<MapLoadingState />}>
               <ResponseMap
                 district={district}
-                resolved={resolved}
+                markers={markers}
+                assessments={assessments}
+                outages={sim.outages}
+                elmUnconfirmed={elmUnconfirmed}
+                visible={visible}
+                heatmap={heatmap}
                 selected={selected}
                 walking={walking}
                 onDistrict={setDistrict}
@@ -303,16 +510,34 @@ export function Dashboard() {
             </Suspense>
           </ClientOnly>
           {district === "elm" && streetView && (
-            <StreetView resolved={resolved} selected={selected} onSelect={openPerson} />
+            <StreetView
+              markers={markers}
+              assessments={assessments}
+              visible={visible}
+              selected={selected}
+              onSelect={openPerson}
+            />
           )}
           {district === "elm" && (
-            <Button
-              variant="outline"
-              className="map-float bottom-5 right-5 text-xs"
-              onClick={() => setStreetView((v) => !v)}
-            >
-              {streetView ? "Show map" : "Show street view"}
-            </Button>
+            <div className="map-float bottom-5 right-5 flex gap-2">
+              {!streetView && (
+                <Button
+                  variant="outline"
+                  className="text-xs"
+                  onClick={() => setHeatmap((v) => !v)}
+                  aria-pressed={heatmap}
+                >
+                  <Flame /> {heatmap ? "Hide" : "Show"} silence heatmap
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                className="text-xs"
+                onClick={() => setStreetView((v) => !v)}
+              >
+                {streetView ? "Show map" : "Show street view"}
+              </Button>
+            </div>
           )}
           <div className="map-float left-5 top-5 flex items-center gap-3 rounded-lg px-4 py-3">
             <MapPin className="size-4 text-primary" />
@@ -320,7 +545,7 @@ export function Dashboard() {
               <p className="text-sm font-semibold">{activeDistrict?.name ?? "Texas"}</p>
               <p className="text-[11px] text-muted-foreground">
                 {district === "elm"
-                  ? "30 households · Elm Street"
+                  ? `${RESIDENTS.length} households · Elm Street`
                   : district
                     ? `${activeDistrict?.totalResidents.toLocaleString()} residents`
                     : "Richardson response · 9 neighborhoods"}
@@ -348,11 +573,18 @@ export function Dashboard() {
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px]">
               {district === "elm" ? (
                 <>
-                  <LegendDot tone="bg-safe" text="Safe" />
-                  <LegendDot tone="bg-alert" text="Needs help" />
-                  <LegendDot tone="border-2 border-danger bg-card" text="Home + silent" />
+                  <LegendDot tone="bg-safe" text="Confirmed safe" />
+                  <LegendDot tone="bg-alert" text="Needs assistance" />
+                  <LegendDot tone="border-2 border-danger bg-card" text="Urgent review" />
+                  <LegendDot tone="bg-light" text="Awaiting reply" />
                   <LegendDot tone="border border-unknown" text="Away ↗" />
                   <LegendDot tone="bg-unknown" text="Unknown ?" />
+                  {sim.outages.length > 0 && (
+                    <LegendDot
+                      tone="border border-dashed border-alert bg-alert/20"
+                      text="Simulated outage"
+                    />
+                  )}
                 </>
               ) : (
                 <div>
@@ -372,20 +604,13 @@ export function Dashboard() {
               )}
             </div>
           </div>
-          {demo && (
-            <div className="map-float bottom-32 left-5 rounded-lg px-4 py-3 text-xs text-primary">
+          {demo && demoCaption && (
+            <div
+              className="map-float bottom-32 left-5 rounded-lg px-4 py-3 text-xs text-primary"
+              aria-live="polite"
+            >
               <Radio className="mr-2 inline size-4" />
-              {
-                [
-                  "",
-                  "Finding the highest-priority homes",
-                  "Elm District · 9 silent at home",
-                  "Mrs. Lopez said she'd stay home",
-                  "Maria is checking on Mrs. Lopez",
-                  "Maria confirmed: she's okay",
-                  "Team confirmations received · Elm priority reduced",
-                ][demoPhase]
-              }
+              {demoCaption}
             </div>
           )}
           <span className="map-float right-5 top-5 hidden items-center gap-2 rounded-lg px-3 py-2 text-[11px] text-muted-foreground sm:flex">
@@ -395,7 +620,7 @@ export function Dashboard() {
         </section>
         <aside
           className="response-panel"
-          aria-label={district ? "Where to look" : "City priorities"}
+          aria-label={district ? "Priority queue" : "City priorities"}
         >
           {!district ? (
             <>
@@ -409,13 +634,7 @@ export function Dashboard() {
                   </h2>
                 </div>
                 <dl className="response-counts">
-                  {[
-                    { label: "Residents in the storm's path", value: 12000 },
-                    { label: "Replied safe", value: 11640 },
-                    { label: "Silent after check-in", value: 360 - resolvedHome },
-                    { label: "Said they'd be home", value: 35 - resolvedHome },
-                    { label: "Home + vulnerable", value: Math.max(0, 3 - resolvedHome) },
-                  ].map((item, index) => (
+                  {counts.map((item, index) => (
                     <div
                       key={item.label}
                       className={cn(
@@ -431,17 +650,19 @@ export function Dashboard() {
                 <p
                   className={cn(
                     "priority-note mt-5 flex items-start gap-2 text-xs leading-relaxed",
-                    resolvedHome < 3 ? "text-danger" : "text-foreground",
+                    reviewNow.length ? "text-danger" : "text-foreground",
                   )}
                 >
-                  {resolvedHome < 3 ? (
+                  {reviewNow.length ? (
                     <Footprints className="mt-0.5 size-4 shrink-0" />
                   ) : (
                     <Check className="mt-0.5 size-4 shrink-0" />
                   )}
-                  {resolvedHome < 3
-                    ? `${3 - resolvedHome} people need a knock first`
-                    : "Priority home checks are complete"}
+                  {reviewNow.length
+                    ? `${reviewNow.length} households need review first`
+                    : active
+                      ? "Priority reviews are complete"
+                      : "Waiting for the incident to open"}
                 </p>
               </section>
               <section className="p-6">
@@ -452,7 +673,7 @@ export function Dashboard() {
                   Send responders here first
                 </h2>
                 <p className="mb-5 mt-2 text-xs leading-relaxed text-muted-foreground">
-                  Ranked by people silent at home.
+                  Ranked by unconfirmed households.
                 </p>
                 <div className="queue-column-heads flex justify-between border-b border-border pb-2 text-[11px] text-muted-foreground">
                   <span>Neighborhood</span>
@@ -471,7 +692,7 @@ export function Dashboard() {
                       </span>
                       <span className="flex-1 text-left text-sm">{d.name}</span>
                       <span className="text-base font-semibold tabular-nums text-foreground">
-                        {districtCount(d, resolved)}
+                        {districtCount(d, elmUnconfirmed)}
                       </span>
                       <ChevronRight className="text-muted-foreground" />
                     </Button>
@@ -493,17 +714,19 @@ export function Dashboard() {
                   <ArrowLeft /> Back to Texas
                 </Button>
                 <h2 className="font-display text-2xl font-semibold tracking-tight">
-                  Where to look
+                  Priority queue
                 </h2>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {activeDistrict?.name} ·{" "}
-                  {district === "elm" ? silent.length : activeDistrict?.silentAtHome} unconfirmed
+                  {district === "elm"
+                    ? `${elmUnconfirmed} unconfirmed · ${reviewNow.length} urgent/high · ${inOutage.length} in outage zones`
+                    : `${activeDistrict?.silentAtHome} unconfirmed`}
                 </p>
               </section>
               {district === "elm" ? (
-                <div className="space-y-7 p-6">
-                  {silent.length === 0 && (
-                    <div className="queue-empty border-b border-border pb-6" role="status">
+                <>
+                  {active && elmUnconfirmed === 0 && (
+                    <div className="queue-empty border-b border-border px-6 py-6" role="status">
                       <DoorstepBear variant="mascot" className="mb-4 h-20 w-16" />
                       <h3 className="font-display text-xl font-semibold">
                         No unanswered check-ins
@@ -514,115 +737,28 @@ export function Dashboard() {
                       </p>
                     </div>
                   )}
-                  {groups.map((g) => {
-                    const people = silent.filter((r) => groupFor(r) === g.key);
-                    if (!people.length) return null;
-                    return (
-                      <section key={g.key}>
-                        <h3
-                          className={cn(
-                            "mb-3 flex items-center justify-between text-sm font-semibold",
-                            g.tone,
-                          )}
-                        >
-                          {g.title}
-                          <span className="text-xs">{people.length}</span>
-                        </h3>
-                        <div className="space-y-3">
-                          <AnimatePresence>
-                            {people.map((r) => (
-                              <motion.article
-                                layout={!reduce}
-                                exit={{ opacity: 0, height: 0 }}
-                                key={r.id}
-                                className={cn(
-                                  "resident-card overflow-hidden rounded-md border p-4",
-                                  g.border,
-                                )}
-                              >
-                                <Button
-                                  variant="ghost"
-                                  onClick={() => openPerson(r.id)}
-                                  className="h-auto w-full justify-start whitespace-normal p-0 text-left hover:bg-transparent"
-                                >
-                                  <span className="flex-1">
-                                    <span className="block text-base font-semibold">
-                                      {r.shortName}{" "}
-                                      <span className="text-xs font-normal text-muted-foreground">
-                                        · {r.age}
-                                      </span>
-                                    </span>
-                                    <span className="mt-1 block text-[11px] text-muted-foreground">
-                                      {r.address}
-                                    </span>
-                                    <span className="mt-2 flex flex-wrap gap-1">
-                                      {reasons(r).map((c) => (
-                                        <span
-                                          key={c}
-                                          className="rounded-sm bg-secondary px-2 py-1 text-[11px] text-muted-foreground"
-                                        >
-                                          {c}
-                                        </span>
-                                      ))}
-                                    </span>
-                                  </span>
-                                  <span
-                                    className="shrink-0 border-l border-border pl-3 text-xs font-semibold tabular-nums text-danger"
-                                    title="Urgency score"
-                                  >
-                                    Urgency {urgencyScore(r)}
-                                  </span>
-                                </Button>
-                                <blockquote className="mt-3 border-l-2 border-border pl-3 text-sm leading-relaxed text-muted-foreground">
-                                  “{r.planQuote}”
-                                </blockquote>
-                                <Ladder step={pending[r.id] ? 4 : r.silentHours >= 3 ? 2 : 1} />
-                                <Button
-                                  id={`act-${r.id}`}
-                                  onClick={() => act(r)}
-                                  disabled={Boolean(pending[r.id])}
-                                  variant={g.key === "check" ? "destructive" : "secondary"}
-                                  className="mt-3 h-auto min-h-11 w-full whitespace-normal rounded-lg px-2 py-2 text-xs"
-                                >
-                                  {g.key === "check" ? (
-                                    <Footprints />
-                                  ) : g.key === "call" ? (
-                                    <PhoneIcon />
-                                  ) : (
-                                    <ShieldCheck />
-                                  )}
-                                  {pending[r.id] ?? actionLabel(r)}
-                                </Button>
-                              </motion.article>
-                            ))}
-                          </AnimatePresence>
-                        </div>
-                      </section>
-                    );
-                  })}
-                  <section className="border-t border-border pt-4">
-                    <h3 className="text-sm font-semibold text-alert">Help requested</h3>
-                    {RESIDENTS.filter((r) =>
-                      ["needsHelp", "helpOnWay"].includes(resolved[r.id] ?? r.checkInStatus),
-                    ).map((r) => (
-                      <Button
-                        key={r.id}
-                        onClick={() => openPerson(r.id)}
-                        variant="ghost"
-                        className="mt-2 h-auto w-full justify-between text-xs"
-                      >
-                        <span>
-                          {r.shortName} · {r.address}
-                        </span>
-                        <ArrowRight />
-                      </Button>
-                    ))}
-                  </section>
-                </div>
+                  <PriorityQueue
+                    people={queue}
+                    sim={sim}
+                    assessments={assessments}
+                    markers={markers}
+                    filter={filter}
+                    search={search}
+                    selected={selected}
+                    pending={pending}
+                    resolvedCount={
+                      RESIDENTS.filter((r) => assessments[r.id]?.level === "resolved").length
+                    }
+                    onFilter={setFilter}
+                    onSearch={setSearch}
+                    onOpen={openPerson}
+                    onAct={approveAction}
+                  />
+                </>
               ) : (
                 <section className="p-6">
                   <p className="text-sm text-muted-foreground">
-                    {activeDistrict?.silentAtHome} residents silent at home
+                    {activeDistrict?.silentAtHome} residents unconfirmed (static demo count)
                   </p>
                   <div className="mascot-note mt-6 border-y border-border py-6">
                     <DoorstepBear variant="mascot" className="mb-4 h-20 w-16" />
@@ -642,9 +778,55 @@ export function Dashboard() {
               )}
             </>
           )}
-          <footer className="flex items-center gap-2 border-t border-border px-6 py-4 text-[11px] text-muted-foreground">
-            <DoorstepBear className="size-6" /> Doorstep{" "}
-            <span className="ml-auto">Simulated response · mock data</span>
+          <section
+            className="border-t border-border px-6 py-4"
+            aria-label="Coordinator activity log"
+          >
+            <h3 className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Activity log
+            </h3>
+            <ol className="max-h-56 space-y-2 overflow-y-auto text-xs" aria-live="polite">
+              {sim.logs
+                .slice(-14)
+                .reverse()
+                .map((l) => (
+                  <li key={l.id} className="flex gap-2">
+                    <span className="w-14 shrink-0 tabular-nums text-muted-foreground">
+                      {wallClock(l.at)}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={!l.residentId}
+                      onClick={() => l.residentId && (setDistrict("elm"), openPerson(l.residentId))}
+                      className={cn(
+                        "text-left",
+                        l.kind === "outage" && "text-alert",
+                        l.kind === "fusion" && "text-primary",
+                        l.kind === "escalation" &&
+                          l.text.startsWith("URGENT") &&
+                          "font-semibold text-danger",
+                        l.residentId && "hover:underline",
+                      )}
+                    >
+                      {l.text}
+                    </button>
+                  </li>
+                ))}
+              {!sim.logs.length && (
+                <li className="text-muted-foreground">
+                  Waiting for the incident to open. Press Start.
+                </li>
+              )}
+            </ol>
+          </section>
+          <footer className="flex flex-wrap items-center gap-2 border-t border-border px-6 py-4 text-[11px] text-muted-foreground">
+            <DoorstepBear className="size-6" /> Doorstep
+            <span className="ml-auto text-right">
+              Synthetic residents · simulated Ting outages ·{" "}
+              {integrations?.photon ? "Photon messaging" : "mock messaging"} · AI:{" "}
+              {integrations?.nemotron ? "Nemotron" : integrations?.gemini ? "Gemini" : "rules"} ·{" "}
+              {formatClock(sim.now)}
+            </span>
           </footer>
         </aside>
       </main>
@@ -689,7 +871,7 @@ export function Dashboard() {
                 <span className="flex items-center gap-1.5 font-medium">
                   <DoorstepBear className="size-5" /> Doorstep check-in
                 </span>
-                <span>Saturday · 5:02 PM</span>
+                <span>Saturday · {wallClock(sim.now)}</span>
               </div>
               <p className="rounded-lg rounded-tl-none bg-secondary p-3 text-sm leading-relaxed">
                 {phoneMode === "neighbor"
@@ -704,23 +886,19 @@ export function Dashboard() {
                   <p className="mt-3 flex items-center justify-center gap-1 text-xs text-muted-foreground">
                     <Check className="size-3" /> Response recorded
                   </p>
-                  {replies[phonePerson.id] === "No answer" && (
-                    <Button
-                      variant="destructive"
-                      className="mt-3 w-full"
-                      onClick={() => {
-                        update(phonePerson.id, "helpOnWay");
-                        addLog(
-                          phonePerson.id,
-                          "No answer at door · responder dispatched",
-                          "5:16pm",
-                        );
-                        setPhone(null);
-                      }}
-                    >
-                      Dispatch welfare check
-                    </Button>
-                  )}
+                  {(replies[phonePerson.id] === "No answer" || noAnswer[phonePerson.id]) &&
+                    !sim.welfare[phonePerson.id] && (
+                      <Button
+                        variant="destructive"
+                        className="mt-3 w-full"
+                        onClick={() => {
+                          setPhone(null);
+                          approveAction(phonePerson, 5);
+                        }}
+                      >
+                        Approve welfare-check review
+                      </Button>
+                    )}
                 </>
               ) : phoneMode === "neighbor" ? (
                 <div className="mt-5 space-y-2">
@@ -757,82 +935,21 @@ export function Dashboard() {
       </AnimatePresence>
       <Sheet open={drawer && Boolean(person)} onOpenChange={setDrawer}>
         <SheetContent className="resident-sheet w-full overflow-y-auto sm:max-w-md">
-          {person && (
-            <>
-              <SheetHeader>
-                <SheetTitle className="text-2xl">{person.name}</SheetTitle>
-                <SheetDescription>
-                  {person.address} · {person.age} years old
-                </SheetDescription>
-              </SheetHeader>
-              <div className="my-6 border-y border-primary/30 py-4">
-                <p className="text-xs uppercase tracking-widest text-primary">Pre-storm plan</p>
-                <h3 className="mt-2 text-xl font-semibold">
-                  Plan: {planLabel(person).toLowerCase()}
-                </h3>
-                <p className="mt-2 text-sm text-muted-foreground">“{person.planQuote}”</p>
-                <p className="mt-3 text-xs text-primary">
-                  Now:{" "}
-                  {resolved[person.id] === "helpOnWay"
-                    ? "Help on the way"
-                    : (resolved[person.id] ?? person.checkInStatus) === "safe"
-                      ? "Confirmed safe"
-                      : (resolved[person.id] ?? person.checkInStatus) === "needsHelp"
-                        ? "Needs help"
-                        : "No check-in received"}
-                </p>
-              </div>
-              <dl className="grid grid-cols-2 gap-x-5 gap-y-5 text-sm">
-                {[
-                  ["Language", person.language],
-                  ["Lives alone", person.livesAlone ? "Yes" : "No"],
-                  ["Medical needs", person.medicalNeed ?? "None listed"],
-                  [
-                    "Emergency contact",
-                    `${person.emergencyContact.name} · ${person.emergencyContact.relation}`,
-                  ],
-                  ["Opted-in neighbor", `${person.neighbor.name} · ${person.neighbor.address}`],
-                ].map(([k, v]) => (
-                  <div key={k} className={k === "Opted-in neighbor" ? "col-span-2" : ""}>
-                    <dt className="mb-1 text-xs text-muted-foreground">{k}</dt>
-                    <dd>{v}</dd>
-                  </div>
-                ))}
-              </dl>
-              <h3 className="mb-4 mt-8 text-base font-semibold">Response timeline</h3>
-              <ol className="space-y-5 border-l border-border pl-5">
-                {[
-                  {
-                    time: "Fri 6:10pm",
-                    text: `Asked plan → ${person.planAnswer ? (person.planAnswer === "home" ? "'Home'" : person.planDetail) : "No reply"}`,
-                  },
-                  { time: "Sat 4:02pm", text: `Check-in sent (${person.language})` },
-                  {
-                    time: "4:32pm",
-                    text:
-                      person.checkInStatus === "silent"
-                        ? "No reply → text resent"
-                        : `Replied: ${person.checkInStatus === "safe" ? "Safe" : "Need help"}`,
-                  },
-                  ...(logs[person.id] ?? []),
-                ].map((l, i) => (
-                  <li key={i}>
-                    <p className="text-[11px] text-primary">{l.time}</p>
-                    <p className="mt-1 text-sm">{l.text}</p>
-                  </li>
-                ))}
-              </ol>
-              {(resolved[person.id] ?? person.checkInStatus) === "silent" && (
-                <Button
-                  variant="default"
-                  className="mt-7 h-12 w-full whitespace-normal rounded-xl"
-                  onClick={() => act(person)}
-                >
-                  <Footprints />
-                  {actionLabel(person)}
-                </Button>
+          {person && assessments[person.id] && (
+            <ResidentDetail
+              person={person}
+              sim={sim}
+              assessment={assessments[person.id]!}
+              shelters={shelters}
+              busy={busy || Boolean(pending[person.id])}
+              realMessages={realMessages}
+              canSendRealCheckin={Boolean(
+                integrations?.photon && integrations.photonResidentId === person.id,
               )}
-            </>
+              onSendRealCheckin={sendRealCheckin}
+              onApprove={approveAction}
+              onSimulateReply={simulateReply}
+            />
           )}
         </SheetContent>
       </Sheet>
@@ -845,42 +962,5 @@ function LegendDot({ tone, text }: { tone: string; text: string }) {
       <span className={cn("size-2 rounded-full", tone)} />
       {text}
     </span>
-  );
-}
-
-const STEPS = ["Text", "Call", "Family", "Neighbor", "Responders"];
-function reasons(r: Resident) {
-  const c: string[] = [];
-  if (r.livesAlone) c.push("Home alone");
-  if (r.age >= 65) c.push(`Age ${r.age}`);
-  if (r.silentHours > 0) c.push(`Silent ${r.silentHours}h`);
-  if (r.language !== "English") c.push(r.language);
-  return c;
-}
-function Ladder({ step }: { step: number }) {
-  return (
-    <ol className="mt-4 grid grid-cols-5 gap-1.5" aria-label={`Escalation step ${step} of 5`}>
-      {STEPS.map((label, i) => {
-        const n = i + 1;
-        return (
-          <li key={label} className="min-w-0">
-            <span
-              className={cn(
-                "block h-1.5 rounded-full transition-colors duration-500",
-                n < step ? "bg-primary/50" : n === step ? "bg-primary" : "bg-muted",
-              )}
-            />
-            <span
-              className={cn(
-                "mt-1.5 block break-words text-[10px] leading-tight",
-                n === step ? "font-bold text-primary" : "text-muted-foreground",
-              )}
-            >
-              {label}
-            </span>
-          </li>
-        );
-      })}
-    </ol>
   );
 }
