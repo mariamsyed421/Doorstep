@@ -13,10 +13,8 @@ import type { FeatureCollection, Polygon } from "geojson";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import { Button } from "@/components/ui/button";
 import {
-  COUNTY_BY_GEOID,
   DISTRICTS,
   RESIDENTS,
-  countySilentAtHome,
   districtCount,
   markerState,
   urgency,
@@ -39,12 +37,10 @@ setWorkerUrl(workerUrl);
 
 interface Props {
   district: string | null;
-  county: string | null;
   resolved: Resolutions;
   selected: string | null;
   walking: string | null;
   onDistrict: (id: string | null) => void;
-  onCounty: (geoid: string | null) => void;
   onSelect: (id: string) => void;
 }
 
@@ -61,30 +57,15 @@ const initialBounds: MapBounds = [
   [TEXAS_BOUNDS[0][1], TEXAS_BOUNDS[0][0]],
   [TEXAS_BOUNDS[1][1], TEXAS_BOUNDS[1][0]],
 ];
+const cityBounds = coordinateBounds(
+  DISTRICTS.flatMap((d) => d.polygon.map(([lat, lng]) => [lng, lat])),
+);
 const fallbackStyle: StyleSpecification = {
   version: 8,
   sources: {},
   layers: [{ id: "background", type: "background", paint: { "background-color": "#f1f2f3" } }],
 };
 const colors = { red: "#c82018", orange: "#956008", amber: "#edb34c", quiet: "#767d85" };
-// Attach mock response figures so county fills and tooltips can read them from the source.
-function withResponse(counties: Counties, resolved: Resolutions): FeatureCollection {
-  return {
-    type: "FeatureCollection",
-    features: counties.features.map((feature) => {
-      const response = COUNTY_BY_GEOID.get(feature.properties.GEOID);
-      return {
-        ...feature,
-        properties: {
-          ...feature.properties,
-          home: response ? countySilentAtHome(response, resolved) : 0,
-          enrolled: response?.enrolled ?? 0,
-          alone: response?.liveAloneSilent ?? 0,
-        },
-      };
-    }),
-  };
-}
 const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 function markerButton(label: string, className: string) {
@@ -172,10 +153,8 @@ export default function ResponseMap(props: Props) {
           { selected: true },
         );
     }
-    const changed = countyRef.current?.properties.GEOID !== next?.properties.GEOID;
     countyRef.current = next;
     setCounty(next);
-    if (changed) latest.current.onCounty(next?.properties.GEOID ?? null);
     if (map) {
       if (next) {
         map.dragRotate.enable();
@@ -324,7 +303,7 @@ export default function ResponseMap(props: Props) {
             : String(hit.properties["name"]);
         const detail =
           hit.source === "texas-counties"
-            ? `${Number(hit.properties["home"]).toLocaleString()} silent at home · ${Number(hit.properties["enrolled"]).toLocaleString()} enrolled`
+            ? "Click to explore"
             : `${hit.properties["count"]} silent at home · ${hit.properties["alone"]} live alone`;
         hoverPopup.setDOMContent(tooltipContent(title, detail)).addTo(map);
       }
@@ -400,25 +379,9 @@ export default function ResponseMap(props: Props) {
   useEffect(() => {
     const map = mapRef.current;
     if (!ready || !map || !counties) return;
+    (map.getSource("texas-counties") as GeoJSONSource).setData(counties);
     if (!countyRef.current && !latest.current.district) fit(boundsRef.current, 0, 19, false);
   }, [counties, fit, ready]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!ready || !map || !counties) return;
-    (map.getSource("texas-counties") as GeoJSONSource).setData(
-      withResponse(counties, props.resolved),
-    );
-  }, [counties, props.resolved, ready]);
-
-  // Follow county picks made outside the map, such as the priority list.
-  useEffect(() => {
-    if (!ready || !counties || props.district) return;
-    if (props.county === (countyRef.current?.properties.GEOID ?? null)) return;
-    const next = counties.features.find((f) => f.properties.GEOID === props.county);
-    if (next) selectCounty(next);
-    else returnToTexas();
-  }, [counties, props.county, props.district, ready, returnToTexas, selectCounty]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -485,8 +448,28 @@ export default function ResponseMap(props: Props) {
     if (!ready || !map || props.district === "elm") return;
     const markers: Marker[] = [];
     const popups: Popup[] = [];
-    // Neighborhood labels only once zoomed in, so the statewide view stays clear.
-    if (!overview) {
+    if (overview) {
+      const element = markerButton(
+        "Explore Richardson response neighborhoods",
+        "region-name-marker",
+      );
+      const title = document.createElement("strong");
+      const detail = document.createElement("span");
+      title.textContent = "Richardson, TX";
+      detail.textContent = "9 neighborhoods · Explore →";
+      element.append(title, detail);
+      element.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const next = countiesRef.current && countyAt(countiesRef.current, boundsCenter(cityBounds));
+        if (next) setSelection(next);
+        fit(cityBounds, 50, 13.8);
+      });
+      markers.push(
+        new Marker({ element, anchor: "top", offset: [0, 22] })
+          .setLngLat([-96.745, 32.9539])
+          .addTo(map),
+      );
+    } else {
       DISTRICTS.forEach((district) => {
         const count = districtCount(district, props.resolved);
         const position = boundsCenter(
@@ -523,7 +506,7 @@ export default function ResponseMap(props: Props) {
       markers.forEach((m) => m.remove());
       popups.forEach((p) => p.remove());
     };
-  }, [overview, props.district, props.resolved, ready]);
+  }, [fit, overview, props.district, props.resolved, ready, setSelection]);
 
   useEffect(() => {
     const map = mapRef.current;
