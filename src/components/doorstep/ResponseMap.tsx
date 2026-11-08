@@ -3,7 +3,7 @@ import { Plus, Minus, Crosshair } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   MapContainer,
-  Polygon,
+  Circle,
   Marker,
   Tooltip,
   Polyline,
@@ -138,11 +138,17 @@ export default function ResponseMap(props: Props) {
         DISTRICTS.map((d) => {
           const count = districtCount(d, props.resolved);
           const tone = urgency(count);
-          const center = L.polygon(d.polygon).getBounds().getCenter();
+          const bounds = L.polygon(d.polygon).getBounds();
+          const center = bounds.getCenter();
+          const radius = Math.min(
+            center.distanceTo(L.latLng(bounds.getNorth(), center.lng)),
+            center.distanceTo(L.latLng(center.lat, bounds.getEast())),
+          );
           return (
             <Fragment key={d.id}>
-              <Polygon
-                positions={d.polygon}
+              <Circle
+                center={center}
+                radius={radius}
                 pathOptions={{
                   className: `district-polygon district-${tone}`,
                   weight: 1.5,
@@ -155,7 +161,7 @@ export default function ResponseMap(props: Props) {
                   <br />
                   {count} silent at home · {d.liveAloneSilent} live alone
                 </Tooltip>
-              </Polygon>
+              </Circle>
               <Marker
                 position={center}
                 icon={L.divIcon({
