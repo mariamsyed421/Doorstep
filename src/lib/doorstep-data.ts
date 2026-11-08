@@ -229,7 +229,7 @@ export const RESIDENTS: Resident[] = [
     shortName: "Mrs. Lopez",
     address: "412 Elm St",
     age: 78,
-    language: "Spanish",
+    language: "English",
     livesAlone: true,
     medicalNeed: "Uses a walker",
     planAnswer: "home",
