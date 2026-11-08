@@ -295,9 +295,15 @@
 .house.porch-help .porch { fill: var(--alert); }
 .house.porch-help .halo { fill: var(--alert); animation: pulse-halo 1.4s ease-in-out infinite; }
 @keyframes pulse-halo { 50% { opacity: 0.6; } }
-.danger-ring { outline: 3px solid var(--danger); outline-offset: 2px; animation: danger-ring 1.4s ease-out infinite; }
-@keyframes danger-ring { 0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--danger) 60%, transparent); } 100% { box-shadow: 0 0 0 16px transparent; } }
-.help-glow { outline: 2px solid var(--alert); box-shadow: 0 0 22px 2px color-mix(in oklab, var(--alert) 55%, transparent); }
+.danger-glow { --glow: 1; }
+.danger-glow::before {
+  content: ""; position: absolute; inset: 6% 10% 30%; border-radius: 9999px; pointer-events: none;
+  background: radial-gradient(circle, color-mix(in oklab, var(--danger) calc(var(--glow) * 45%), transparent) 0%, transparent 70%);
+  animation: danger-glow calc(2.6s - var(--glow) * 1.2s) ease-in-out infinite;
+}
+@keyframes danger-glow { 0%,100% { opacity: 0.35; transform: scale(0.92); } 50% { opacity: 1; transform: scale(calc(1 + var(--glow) * 0.18)); } }
+.house-selected .house { filter: drop-shadow(0 0 4px var(--foreground)); }
+.help-glow .house { filter: drop-shadow(0 0 10px var(--alert)); }
 @media (min-width: 1500px) {
   .dashboard-workspace {
     grid-template-columns: minmax(0, 1fr) 390px;

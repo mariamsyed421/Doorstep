@@ -38,14 +38,14 @@ describe("Response priorities", () => {
     const r = RESIDENTS.find((r) => r.id === "412");
     const elm = DISTRICTS.find((d) => d.id === "elm");
     if (!r || !elm) throw Error("Missing Elm demo");
-    expect(districtCount(elm, {})).toBe(9);
+    expect(districtCount(elm, {})).toBe(3);
     expect(markerState(r, {})).toBe("danger");
     expect(markerState(r, { "412": "safe" })).toBe("safe");
-    expect(districtCount(elm, { "412": "safe" })).toBe(8);
-    expect(accountedFor({})).toBe(11962);
-    expect(accountedFor({ "412": "safe" })).toBe(11963);
+    expect(districtCount(elm, { "412": "safe" })).toBe(2);
+    expect(accountedFor({})).toBe(11968);
+    expect(accountedFor({ "412": "safe" })).toBe(11969);
   });
   it("dispatching a welfare check does not falsely count a person safe", () => {
-    expect(accountedFor({ "433": "helpOnWay" })).toBe(11962);
+    expect(accountedFor({ "433": "helpOnWay" })).toBe(11968);
   });
 });

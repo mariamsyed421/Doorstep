@@ -30,6 +30,7 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import {
+  urgencyScore,
   RESIDENTS,
   DISTRICTS,
   groupFor,
@@ -187,22 +188,18 @@ export function Dashboard() {
       setDemoPhase(5);
     });
     later(11500, () => {
-      // The city-wide response team confirms the other six high-priority homes in parallel.
+      // The city-wide response team confirms the other high-priority homes in parallel.
       setResolved((x) => ({
         ...x,
         "438": "safe",
-        "440": "safe",
-        "442": "safe",
-        "444": "safe",
-        "446": "safe",
-        "448": "safe",
+        "452": "safe",
       }));
       setPhone(null);
       setWalking(null);
       setSelected(null);
       setDistrict(null);
       setDemoPhase(6);
-      ["438", "440", "442", "444", "446", "448"].forEach((id) =>
+      ["438", "452"].forEach((id) =>
         addLog(id, "Responder team confirmed safe", "5:16pm"),
       );
     });
@@ -283,7 +280,7 @@ export function Dashboard() {
           <div className="hidden h-8 w-px bg-border sm:block" />
           <div className="hidden text-right sm:block">
             <p className="text-xl font-semibold text-danger">
-              {38 - (accountedFor(resolved) - 11962)}
+              {32 - (accountedFor(resolved) - 11968)}
             </p>
             <p className="text-xs text-muted-foreground">still unconfirmed</p>
           </div>
@@ -321,7 +318,7 @@ export function Dashboard() {
           {district === "elm" && (
             <Button
               variant="secondary"
-              className="map-float right-5 top-20"
+              className="map-float bottom-5 right-5"
               onClick={() => setStreetView((v) => !v)}
             >
               {streetView ? "Show map" : "Show street view"}
@@ -434,14 +431,14 @@ export function Dashboard() {
                     },
                     {
                       label: "Said they'd be home",
-                      value: 41 - resolvedHome,
+                      value: 35 - resolvedHome,
                       width: "30%",
                       color: "bg-alert",
                       text: "text-alert",
                     },
                     {
                       label: "Home + vulnerable",
-                      value: Math.max(0, 9 - resolvedHome),
+                      value: Math.max(0, 3 - resolvedHome),
                       width: "12%",
                       color: "bg-danger",
                       text: "text-danger",
@@ -466,7 +463,7 @@ export function Dashboard() {
                 </div>
                 <p className="mt-5 flex items-center gap-2 text-xs text-danger">
                   <Footprints className="size-4" />
-                  {Math.max(0, 9 - resolvedHome)} people need a knock first
+                  {Math.max(0, 3 - resolvedHome)} people need a knock first
                 </p>
               </section>
               <section className="p-6">
@@ -581,17 +578,9 @@ export function Dashboard() {
                                     </span>
                                   </span>
                                   <span className="grid h-8 min-w-8 place-items-center rounded-full bg-primary px-2 text-sm font-bold text-primary-foreground" title="Urgency score">
-                                    Urgency {score(r)}
+                                    Urgency {urgencyScore(r)}
                                   </span>
                                 </Button>
-                                <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-                                  {r.planAnswer === "home"
-                                    ? r.id === "412"
-                                      ? "Said she'd stay home"
-                                      : "Said they'd stay home"
-                                    : planLabel(r)}
-                                  {r.livesAlone ? " · lives alone" : ""} · silent {r.silentHours}h
-                                </p>
                                 <blockquote className="mt-2 border-l-2 border-primary/60 pl-2 text-xs italic text-foreground/90">
                                   “{r.planQuote}”
                                 </blockquote>
@@ -862,9 +851,6 @@ function reasons(r: Resident) {
   if (r.language !== "English") c.push(r.language);
   return c;
 }
-function score(r: Resident) {
-  return (r.livesAlone ? 3 : 0) + (r.age >= 70 ? 3 : 0) + (r.language !== "English" ? 2 : 0) + Math.min(r.silentHours, 4);
-}
 function Ladder({ step }: { step: number }) {
   return (
     <ol className="mt-4 grid grid-cols-5 gap-1.5" aria-label={`Escalation step ${step} of 5`}>
@@ -880,11 +866,11 @@ function Ladder({ step }: { step: number }) {
             />
             <span
               className={cn(
-                "mt-1.5 block text-[10px] leading-tight",
+                "mt-1.5 block whitespace-nowrap text-[9.5px] leading-tight tracking-tight",
                 n === step ? "font-bold text-primary" : "text-muted-foreground",
               )}
             >
-              {n}. {label}
+              {label}
             </span>
           </li>
         );

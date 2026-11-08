@@ -198,8 +198,8 @@ export const RESIDENTS: Resident[] = [
     language: "English",
     livesAlone: true,
     medicalNeed: "Insulin, needs fridge",
-    planAnswer: "family",
-    planDetail: "At grandson's in Frisco",
+    planAnswer: "home",
+    planDetail: null,
     checkInStatus: "safe",
     silentHours: 0,
     emergencyContact: { name: "Eric", relation: "grandson" },
@@ -311,8 +311,8 @@ export const RESIDENTS: Resident[] = [
     language: "Spanish",
     livesAlone: false,
     medicalNeed: null,
-    planAnswer: "family",
-    planDetail: "At cousin's in Garland",
+    planAnswer: "home",
+    planDetail: null,
     checkInStatus: "safe",
     silentHours: 0,
     emergencyContact: { name: "Sofia", relation: "wife" },
@@ -389,8 +389,8 @@ export const RESIDENTS: Resident[] = [
       medicalNeed: i % 3 === 0 ? "Limited mobility" : null,
       planAnswer: "home",
       planDetail: null,
-      checkInStatus: i < 8 ? "silent" : "safe",
-      silentHours: i < 8 ? 3 : 0,
+      checkInStatus: i === 0 || i === 7 ? "silent" : "safe",
+      silentHours: i === 0 || i === 7 ? 3 : 0,
       emergencyContact: { name: "Alex", relation: "child" },
       neighbor: { name: "Maria Gonzalez", address: "414 Elm St" },
       row: "north",
@@ -453,7 +453,7 @@ const district = (
   ],
 });
 export const DISTRICTS: District[] = [
-  district("elm", "Elm District", 32.949, -96.745, 1480, 9, 4),
+  district("elm", "Elm District", 32.949, -96.745, 1480, 3, 3),
   district("canyon", "Canyon Creek", 32.976, -96.738, 1620, 8, 2),
   district("heights", "Richardson Heights", 32.953, -96.777, 1380, 7, 1),
   district("cumberland", "Cumberland", 32.933, -96.766, 1260, 5, 1),
@@ -475,7 +475,7 @@ export function districtCount(d: District, resolved: Resolutions) {
 }
 export function accountedFor(resolved: Resolutions) {
   return (
-    11962 +
+    11968 +
     RESIDENTS.filter(
       (r) =>
         r.checkInStatus === "silent" &&
@@ -491,4 +491,9 @@ export function markerState(r: Resident, resolved: Resolutions) {
   if (r.planAnswer === null) return status === "safe" ? "safe" : "unknown";
   if (r.planAnswer !== "home") return "away";
   return status === "safe" ? "safe" : "danger";
+}
+
+/** Urgency score: lives alone, age, language barrier, and hours silent. */
+export function urgencyScore(r: Resident) {
+  return (r.livesAlone ? 3 : 0) + (r.age >= 70 ? 3 : 0) + (r.language !== "English" ? 2 : 0) + Math.min(r.silentHours, 4);
 }
