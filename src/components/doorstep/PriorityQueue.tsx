@@ -9,7 +9,6 @@ import {
   Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { LiquidButton } from "@/components/ui/liquid-glass-button";
 import { Input } from "@/components/ui/input";
 import type { Resident } from "@/lib/doorstep-data";
 import { STAGES } from "@/lib/doorstep/escalation";
@@ -104,7 +103,7 @@ export function PriorityQueue(p: Props) {
                 key={r.id}
                 id={`queue-${r.id}`}
                 className={cn(
-                  "resident-card overflow-hidden rounded-xl border p-4",
+                  "resident-card overflow-hidden rounded-md border p-4",
                   BORDER[m],
                   p.selected === r.id && "ring-2 ring-primary",
                 )}
@@ -140,10 +139,10 @@ export function PriorityQueue(p: Props) {
                           <span
                             key={f.id}
                             className={cn(
-                              "rounded-full px-2 py-0.5 text-[10px] font-medium",
+                              "rounded-sm px-2 py-1 text-[11px]",
                               f.id === "explicitUrgentRequest"
                                 ? "bg-danger text-primary-foreground"
-                                : "bg-muted text-foreground",
+                                : "bg-secondary text-muted-foreground",
                             )}
                           >
                             {f.points ? `+${f.points} ` : ""}
@@ -187,7 +186,7 @@ export function PriorityQueue(p: Props) {
                 )}
                 <Ladder stage={ladder} waiting={esc?.status === "awaiting_approval"} />
                 {next.kind !== "none" && (
-                  <LiquidButton
+                  <Button
                     onClick={() =>
                       next.kind === "review" ? p.onOpen(r.id) : p.onAct(r, next.stage)
                     }
@@ -211,7 +210,7 @@ export function PriorityQueue(p: Props) {
                     {next.needsApproval && !p.pending[r.id] && (
                       <span className="opacity-70">· approve</span>
                     )}
-                  </LiquidButton>
+                  </Button>
                 )}
               </motion.article>
             );
@@ -270,7 +269,7 @@ export function Ladder({ stage, waiting }: { stage: number; waiting?: boolean })
             />
             <span
               className={cn(
-                "mt-1.5 block whitespace-nowrap text-[9.5px] leading-tight tracking-tight",
+                "mt-1.5 block break-words text-[10px] leading-tight",
                 n === step ? "font-bold text-primary" : "text-muted-foreground",
               )}
             >

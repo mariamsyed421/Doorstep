@@ -1,4 +1,3 @@
-import type React from "react";
 import type { Resident } from "@/lib/doorstep-data";
 import { cn } from "@/lib/utils";
 
@@ -9,7 +8,6 @@ interface Props {
   planShown: boolean;
   porch: Porch;
   urgent: boolean;
-  intensity?: number;
   delay: number;
   tag?: string | null;
   state?: "safe" | "help" | "danger" | "awaiting" | "away" | "unknown";
@@ -22,7 +20,6 @@ export function House({
   planShown,
   porch,
   urgent,
-  intensity = 1,
   delay,
   tag,
   state,
@@ -41,12 +38,10 @@ export function House({
       onClick={onClick}
       aria-label={`${resident.name}, ${resident.address}`}
       className={cn(
-        "group relative flex flex-col items-center rounded-2xl p-2 pt-3 transition-all duration-500 focus-visible:outline-3 focus-visible:outline-ring",
+        "group relative flex flex-col items-center rounded-sm p-2 pt-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
         selected && "house-selected",
-        urgent && "danger-glow",
-        state === "help" && "help-glow",
+        urgent && "house-urgent",
       )}
-      style={urgent ? ({ "--glow": intensity } as React.CSSProperties) : undefined}
     >
       {unknown && (
         <span className="absolute right-2 top-1 z-10 grid h-7 w-7 place-items-center rounded-full bg-unknown text-sm font-bold text-primary-foreground">

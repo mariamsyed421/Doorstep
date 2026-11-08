@@ -2,16 +2,12 @@ import { lazy, Suspense, useEffect, useMemo, useReducer, useRef, useState } from
 import { ClientOnly } from "@tanstack/react-router";
 import { motion, useReducedMotion, AnimatePresence } from "framer-motion";
 import {
-  ArrowDown,
   ArrowLeft,
   ArrowRight,
   Check,
   ChevronRight,
-  CloudLightning,
-  Crosshair,
   Flame,
   Footprints,
-  House,
   Layers,
   MapPin,
   MessageSquare,
@@ -22,7 +18,6 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { LiquidButton } from "@/components/ui/liquid-glass-button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import {
   RESIDENTS,
@@ -60,6 +55,8 @@ import {
 } from "@/lib/doorstep/simulation";
 import { cn } from "@/lib/utils";
 import { StreetView } from "./StreetView";
+import { DoorstepBear, MapLoadingState } from "./DoorstepBear";
+import { IncidentGuide } from "./IncidentGuide";
 import { PriorityQueue } from "./PriorityQueue";
 import { ResidentDetail } from "./ResidentDetail";
 import { SimControls } from "./SimControls";
@@ -394,133 +391,109 @@ export function Dashboard() {
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
   const hoursAgo = Math.max(0, sim.now);
-  const funnel = [
-    {
-      label: "Residents in the storm's path",
-      value: CITY_TOTAL,
-      width: "100%",
-      color: "bg-unknown",
-      text: "text-foreground",
-    },
-    {
-      label: "Accounted for",
-      value: active ? accountedFor(elmUnconfirmed) : 0,
-      width: active ? "97%" : "0%",
-      color: "bg-safe",
-      text: "text-foreground",
-    },
-    {
-      label: "Still unconfirmed",
-      value: active ? OTHER_DISTRICTS_UNCONFIRMED + elmUnconfirmed : 0,
-      width: "53%",
-      color: "bg-primary",
-      text: "text-primary",
-    },
-    {
-      label: "Unresolved inside outage zones",
-      value: inOutage.length,
-      width: "30%",
-      color: "bg-alert",
-      text: "text-alert",
-    },
-    {
-      label: "Urgent / high review",
-      value: reviewNow.length,
-      width: "12%",
-      color: "bg-danger",
-      text: "text-danger",
-    },
+  const unconfirmedTotal = active ? OTHER_DISTRICTS_UNCONFIRMED + elmUnconfirmed : 0;
+  const nextHome = ordered.find(
+    (r) =>
+      active &&
+      !pending[r.id] &&
+      !sim.welfare[r.id] &&
+      assessments[r.id] &&
+      levelRank(assessments[r.id]!.level) >= levelRank("high"),
+  );
+  const counts = [
+    { label: "Residents in the storm's path", value: CITY_TOTAL },
+    { label: "Accounted for", value: active ? accountedFor(elmUnconfirmed) : 0 },
+    { label: "Still unconfirmed", value: unconfirmedTotal },
+    { label: "Unresolved inside outage zones", value: inOutage.length },
+    { label: "Urgent / high review", value: reviewNow.length },
   ];
 
   return (
     <div className="dashboard-shell">
-      <header className="dashboard-header flex min-h-20 flex-wrap items-center justify-between gap-4 border-b border-border px-5 py-4 md:px-7">
-        <div className="flex items-center gap-3">
-          <span className="brand-mark grid size-10 place-items-center rounded-xl bg-primary text-primary-foreground">
-            <House className="size-6" />
-          </span>
+      <header className="dashboard-header">
+        <div className="flex min-w-0 items-center gap-3">
+          <DoorstepBear className="size-10" />
           <div>
-            <h1 className="text-2xl font-bold">
-              Doorstep<span className="text-primary">.</span>
+            <h1 className="font-display text-2xl font-bold tracking-tight">
+              Doorstep<span className="text-brand">.</span>
             </h1>
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-              State Farm · Catastrophe response
-            </p>
+            <p className="text-[11px] text-muted-foreground">Catastrophe response</p>
           </div>
         </div>
-        <div className="hidden items-center gap-2 text-sm text-muted-foreground lg:flex">
-          <span className="text-xl font-bold italic tracking-tight text-brand">
-            State Farm<sup className="ml-0.5 text-[10px] not-italic">®</sup>
-          </span>
-          <span className="mx-3 text-border">/</span> Richardson operations
+        <div className="header-context">
+          <span className="text-sm font-medium">Richardson operations</span>
+          <span className="text-xs text-muted-foreground">State Farm</span>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="header-actions flex items-center gap-3 md:gap-5">
           <span className="hidden items-center gap-2 text-xs text-muted-foreground sm:flex">
-            <span className={cn("size-1.5 rounded-full", sim.running ? "bg-safe" : "bg-unknown")} />{" "}
+            <span
+              className={cn("size-1.5 rounded-full", sim.running ? "bg-brand" : "bg-unknown")}
+            />
             {sim.running ? "Simulation running" : "Simulation paused"}
           </span>
-          <LiquidButton variant="primary" onClick={demo ? stopDemo : runDemo} className="h-10 px-5">
+          <Button onClick={demo ? stopDemo : runDemo} className="h-11 gap-2 px-4">
             {demo ? <Square /> : <Play />} {demo ? "Stop demo" : "Run demo"}
-          </LiquidButton>
-          <span className="operator-avatar hidden size-9 items-center justify-center rounded-full border border-border text-xs font-semibold md:flex">
+          </Button>
+          <span
+            className="operator-avatar hidden size-9 items-center justify-center rounded-md border border-border text-xs font-semibold lg:flex"
+            aria-label="Operator MS"
+          >
             MS
           </span>
         </div>
       </header>
-      <div className="incident-summary flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4 md:px-7">
-        <div className="flex items-center gap-3">
-          <CloudLightning className="size-5 text-primary" />
-          <div>
-            <p className="text-sm font-semibold">
-              {active ? "Storm hit Richardson, TX" : "Storm approaching Richardson, TX"}{" "}
-              <span className="font-normal text-muted-foreground">
-                ·{" "}
-                {active
-                  ? `${Math.floor(hoursAgo / 60)}h ${hoursAgo % 60}m ago`
-                  : "incident not yet opened"}
-              </span>
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {sim.incident.startedLabel} · {sim.incident.type} · {sim.incident.id}
-            </p>
+      <div className="incident-summary">
+        <div className="incident-heading">
+          <p className="section-kicker">
+            Storm response <span className="text-border">/</span> North Texas
+          </p>
+          <h2 className="mt-2 font-display text-[28px] font-semibold leading-tight tracking-tight md:text-[32px]">
+            Richardson, Texas
+          </h2>
+          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+            {sim.incident.type} · {sim.incident.startedLabel} ·{" "}
+            {active
+              ? `${Math.floor(hoursAgo / 60)}h ${hoursAgo % 60}m ago`
+              : "incident not yet opened"}{" "}
+            · {sim.incident.id}
+          </p>
+          <div className="mt-3">
+            <SimControls sim={sim} dispatch={dispatch} disabled={demo} />
           </div>
         </div>
-        <SimControls sim={sim} dispatch={dispatch} disabled={demo} />
-        <div className="flex items-center gap-4" aria-live="polite">
-          <div className="text-right">
-            <p className="text-xl font-semibold tabular-nums">
-              {active ? accountedFor(elmUnconfirmed).toLocaleString() : "—"}{" "}
-              <span className="text-sm font-normal text-muted-foreground">
-                of {CITY_TOTAL.toLocaleString()}
+        <IncidentGuide
+          priorityCount={reviewNow.length}
+          unconfirmed={unconfirmedTotal}
+          pendingCount={Object.keys(pending).length}
+          nextHome={nextHome}
+          demo={demo}
+          onReview={() => {
+            if (!nextHome) return;
+            setDistrict("elm");
+            setStreetView(false);
+            openPerson(nextHome.id);
+          }}
+        />
+        <div className="incident-totals" aria-live="polite">
+          <div>
+            <p className="incident-number">
+              {active ? accountedFor(elmUnconfirmed).toLocaleString() : "—"}
+              <span className="ml-2 text-sm font-normal text-muted-foreground">
+                / {CITY_TOTAL.toLocaleString()}
               </span>
             </p>
-            <p className="text-xs text-muted-foreground">accounted for</p>
+            <p className="mt-1 text-xs text-muted-foreground">Residents accounted for</p>
           </div>
-          <div className="hidden h-8 w-px bg-border sm:block" />
-          <div className="hidden text-right sm:block">
-            <p className="text-xl font-semibold text-danger">
-              {active ? OTHER_DISTRICTS_UNCONFIRMED + elmUnconfirmed : "—"}
-            </p>
-            <p className="text-xs text-muted-foreground">still unconfirmed</p>
+          <div className="incident-unconfirmed">
+            <p className="incident-number text-danger">{active ? unconfirmedTotal : "—"}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Still unconfirmed</p>
           </div>
         </div>
       </div>
       <main className="dashboard-workspace">
         <section className="map-area" aria-label="Texas response heatmap">
-          <ClientOnly
-            fallback={
-              <div className="grid h-full place-items-center text-muted-foreground">
-                Loading Texas map…
-              </div>
-            }
-          >
-            <Suspense
-              fallback={
-                <div className="grid h-full place-items-center text-muted-foreground">
-                  Loading Texas map…
-                </div>
-              }
-            >
+          <ClientOnly fallback={<MapLoadingState />}>
+            <Suspense fallback={<MapLoadingState />}>
               <ResponseMap
                 district={district}
                 markers={markers}
@@ -548,17 +521,22 @@ export function Dashboard() {
           {district === "elm" && (
             <div className="map-float bottom-5 right-5 flex gap-2">
               {!streetView && (
-                <LiquidButton
+                <Button
+                  variant="outline"
                   className="text-xs"
                   onClick={() => setHeatmap((v) => !v)}
                   aria-pressed={heatmap}
                 >
                   <Flame /> {heatmap ? "Hide" : "Show"} silence heatmap
-                </LiquidButton>
+                </Button>
               )}
-              <LiquidButton className="text-xs" onClick={() => setStreetView((v) => !v)}>
+              <Button
+                variant="outline"
+                className="text-xs"
+                onClick={() => setStreetView((v) => !v)}
+              >
                 {streetView ? "Show map" : "Show street view"}
-              </LiquidButton>
+              </Button>
             </div>
           )}
           <div className="map-float left-5 top-5 flex items-center gap-3 rounded-lg px-4 py-3">
@@ -647,73 +625,78 @@ export function Dashboard() {
           {!district ? (
             <>
               <section className="response-overview border-b border-border p-6">
-                <div className="mb-6 flex items-center justify-between">
-                  <h2 className="text-lg font-semibold">From city to doorstep</h2>
-                  <Crosshair className="size-4 text-primary" />
+                <div className="mb-6">
+                  <p className="section-kicker mb-2">
+                    01 <span className="text-border">/</span> Response overview
+                  </p>
+                  <h2 className="font-display text-[23px] font-semibold leading-tight tracking-tight">
+                    From city to doorstep
+                  </h2>
                 </div>
-                <div className="space-y-4">
-                  {funnel.map((f, i) => (
-                    <div key={f.label}>
-                      <div className="mb-2 flex items-baseline justify-between gap-2">
-                        <span className="text-xs text-muted-foreground">{f.label}</span>
-                        <span className={cn("text-lg font-semibold tabular-nums", f.text)}>
-                          {f.value.toLocaleString()}
-                        </span>
-                      </div>
-                      <motion.div
-                        key={`${f.label}-${demo}`}
-                        className={cn("funnel-bar", f.color)}
-                        initial={{ width: 0 }}
-                        animate={{ width: f.value ? f.width : "0%" }}
-                        transition={{ duration: reduce ? 0 : 0.7, delay: reduce ? 0 : i * 0.15 }}
-                      />
+                <dl className="response-counts">
+                  {counts.map((item, index) => (
+                    <div
+                      key={item.label}
+                      className={cn(
+                        "response-count-row",
+                        index === 4 && "response-count-row--priority",
+                      )}
+                    >
+                      <dt>{item.label}</dt>
+                      <dd>{item.value.toLocaleString()}</dd>
                     </div>
                   ))}
-                </div>
-                <p className="mt-5 flex items-center gap-2 text-xs text-danger">
-                  <Footprints className="size-4" />
-                  {reviewNow.length} households need review first
+                </dl>
+                <p
+                  className={cn(
+                    "priority-note mt-5 flex items-start gap-2 text-xs leading-relaxed",
+                    reviewNow.length ? "text-danger" : "text-foreground",
+                  )}
+                >
+                  {reviewNow.length ? (
+                    <Footprints className="mt-0.5 size-4 shrink-0" />
+                  ) : (
+                    <Check className="mt-0.5 size-4 shrink-0" />
+                  )}
+                  {reviewNow.length
+                    ? `${reviewNow.length} households need review first`
+                    : active
+                      ? "Priority reviews are complete"
+                      : "Waiting for the incident to open"}
                 </p>
               </section>
               <section className="p-6">
-                <div className="mb-1 flex items-center justify-between">
-                  <h2 className="text-base font-semibold">Send responders here first</h2>
-                  <ArrowDown className="size-4 text-muted-foreground" />
-                </div>
-                <p className="mb-5 text-xs text-muted-foreground">
-                  Ranked by unconfirmed households
+                <p className="section-kicker mb-2">
+                  02 <span className="text-border">/</span> Neighborhood queue
                 </p>
-                <div className="space-y-1">
-                  {ranked.map((d, i) => {
-                    const count = districtCount(d, elmUnconfirmed);
-                    return (
-                      <Button
-                        key={d.id}
-                        variant="ghost"
-                        onClick={() => setDistrict(d.id)}
-                        className="district-row h-auto min-h-14 w-full justify-start gap-3 rounded-xl px-3 py-3"
-                      >
-                        <span className="w-4 text-xs text-muted-foreground">
-                          {String(i + 1).padStart(2, "0")}
-                        </span>
-                        <span
-                          className={cn(
-                            "size-2 shrink-0 rounded-full",
-                            urgency(count) === "red"
-                              ? "bg-danger"
-                              : urgency(count) === "orange"
-                                ? "bg-alert"
-                                : count
-                                  ? "bg-primary"
-                                  : "bg-unknown",
-                          )}
-                        />
-                        <span className="flex-1 text-left text-sm">{d.name}</span>
-                        <span className="text-sm tabular-nums text-muted-foreground">{count}</span>
-                        <ChevronRight className="text-muted-foreground" />
-                      </Button>
-                    );
-                  })}
+                <h2 className="font-display text-xl font-semibold tracking-tight">
+                  Send responders here first
+                </h2>
+                <p className="mb-5 mt-2 text-xs leading-relaxed text-muted-foreground">
+                  Ranked by unconfirmed households.
+                </p>
+                <div className="queue-column-heads flex justify-between border-b border-border pb-2 text-[11px] text-muted-foreground">
+                  <span>Neighborhood</span>
+                  <span>Unconfirmed</span>
+                </div>
+                <div>
+                  {ranked.map((d, i) => (
+                    <Button
+                      key={d.id}
+                      variant="ghost"
+                      onClick={() => setDistrict(d.id)}
+                      className="district-row h-auto min-h-14 w-full justify-start gap-3 rounded-none px-0 py-4"
+                    >
+                      <span className="w-5 font-mono text-[11px] text-muted-foreground">
+                        {String(i + 1).padStart(2, "0")}
+                      </span>
+                      <span className="flex-1 text-left text-sm">{d.name}</span>
+                      <span className="text-base font-semibold tabular-nums text-foreground">
+                        {districtCount(d, elmUnconfirmed)}
+                      </span>
+                      <ChevronRight className="text-muted-foreground" />
+                    </Button>
+                  ))}
                 </div>
               </section>
             </>
@@ -730,7 +713,9 @@ export function Dashboard() {
                 >
                   <ArrowLeft /> Back to Texas
                 </Button>
-                <h2 className="text-xl font-semibold">Priority queue</h2>
+                <h2 className="font-display text-2xl font-semibold tracking-tight">
+                  Priority queue
+                </h2>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {activeDistrict?.name} ·{" "}
                   {district === "elm"
@@ -739,29 +724,49 @@ export function Dashboard() {
                 </p>
               </section>
               {district === "elm" ? (
-                <PriorityQueue
-                  people={queue}
-                  sim={sim}
-                  assessments={assessments}
-                  markers={markers}
-                  filter={filter}
-                  search={search}
-                  selected={selected}
-                  pending={pending}
-                  resolvedCount={
-                    RESIDENTS.filter((r) => assessments[r.id]?.level === "resolved").length
-                  }
-                  onFilter={setFilter}
-                  onSearch={setSearch}
-                  onOpen={openPerson}
-                  onAct={approveAction}
-                />
+                <>
+                  {active && elmUnconfirmed === 0 && (
+                    <div className="queue-empty border-b border-border px-6 py-6" role="status">
+                      <DoorstepBear variant="mascot" className="mb-4 h-20 w-16" />
+                      <h3 className="font-display text-xl font-semibold">
+                        No unanswered check-ins
+                      </h3>
+                      <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                        Every household in this queue has a recorded response or an assigned welfare
+                        check.
+                      </p>
+                    </div>
+                  )}
+                  <PriorityQueue
+                    people={queue}
+                    sim={sim}
+                    assessments={assessments}
+                    markers={markers}
+                    filter={filter}
+                    search={search}
+                    selected={selected}
+                    pending={pending}
+                    resolvedCount={
+                      RESIDENTS.filter((r) => assessments[r.id]?.level === "resolved").length
+                    }
+                    onFilter={setFilter}
+                    onSearch={setSearch}
+                    onOpen={openPerson}
+                    onAct={approveAction}
+                  />
+                </>
               ) : (
                 <section className="p-6">
                   <p className="text-sm text-muted-foreground">
                     {activeDistrict?.silentAtHome} residents unconfirmed (static demo count)
                   </p>
-                  <p className="mt-4 text-sm">Response team reviewing this district.</p>
+                  <div className="mascot-note mt-6 border-y border-border py-6">
+                    <DoorstepBear variant="mascot" className="mb-4 h-20 w-16" />
+                    <h3 className="font-display text-xl font-semibold">Neighborhood overview</h3>
+                    <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                      Household-level detail is available in the Elm demo.
+                    </p>
+                  </div>
                   <Button
                     onClick={() => setDistrict("elm")}
                     variant="outline"
@@ -814,11 +819,14 @@ export function Dashboard() {
               )}
             </ol>
           </section>
-          <footer className="flex flex-wrap items-center gap-2 border-t border-border px-6 py-4 text-[10px] uppercase tracking-widest text-muted-foreground">
-            <ShieldCheck className="size-3.5" /> Synthetic residents · simulated Ting outages ·{" "}
-            {integrations?.photon ? "Photon messaging" : "mock messaging"} · AI:{" "}
-            {integrations?.nemotron ? "Nemotron" : integrations?.gemini ? "Gemini" : "rules"} ·{" "}
-            {formatClock(sim.now)}
+          <footer className="flex flex-wrap items-center gap-2 border-t border-border px-6 py-4 text-[11px] text-muted-foreground">
+            <DoorstepBear className="size-6" /> Doorstep
+            <span className="ml-auto text-right">
+              Synthetic residents · simulated Ting outages ·{" "}
+              {integrations?.photon ? "Photon messaging" : "mock messaging"} · AI:{" "}
+              {integrations?.nemotron ? "Nemotron" : integrations?.gemini ? "Gemini" : "rules"} ·{" "}
+              {formatClock(sim.now)}
+            </span>
           </footer>
         </aside>
       </main>
@@ -831,10 +839,9 @@ export function Dashboard() {
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 70, opacity: 0 }}
             transition={{ duration: reduce ? 0 : 0.3 }}
-            className="phone-frame fixed bottom-5 right-5 z-[450] w-[300px] max-w-[calc(100vw-40px)] p-3"
+            className="phone-frame fixed bottom-5 right-5 z-[450] w-[340px] max-w-[calc(100vw-40px)]"
           >
-            <div className="mx-auto mb-3 h-1 w-14 rounded-full bg-border" />
-            <div className="rounded-[20px] bg-card p-4">
+            <div className="bg-card p-5">
               <div className="mb-4 flex items-center gap-2 border-b border-border pb-3">
                 <span className="grid size-8 place-items-center rounded-full bg-primary/10 text-primary">
                   <MessageSquare className="size-4" />
@@ -860,9 +867,12 @@ export function Dashboard() {
                   <X />
                 </Button>
               </div>
-              <p className="mb-4 text-center text-[10px] text-muted-foreground">
-                Saturday · {wallClock(sim.now)}
-              </p>
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2 text-[10px] text-muted-foreground">
+                <span className="flex items-center gap-1.5 font-medium">
+                  <DoorstepBear className="size-5" /> Doorstep check-in
+                </span>
+                <span>Saturday · {wallClock(sim.now)}</span>
+              </div>
               <p className="rounded-lg rounded-tl-none bg-secondary p-3 text-sm leading-relaxed">
                 {phoneMode === "neighbor"
                   ? `Hi ${phonePerson.neighbor.name.split(" ")[0]}, can you check on ${phonePerson.shortName} at ${phonePerson.address.replace(" St", "")}? ${phonePerson.id === "412" ? "She's" : "They're"} ${phonePerson.age}${phonePerson.livesAlone ? " and lives alone" : ""}.`
@@ -878,7 +888,7 @@ export function Dashboard() {
                   </p>
                   {(replies[phonePerson.id] === "No answer" || noAnswer[phonePerson.id]) &&
                     !sim.welfare[phonePerson.id] && (
-                      <LiquidButton
+                      <Button
                         variant="destructive"
                         className="mt-3 w-full"
                         onClick={() => {
@@ -887,20 +897,20 @@ export function Dashboard() {
                         }}
                       >
                         Approve welfare-check review
-                      </LiquidButton>
+                      </Button>
                     )}
                 </>
               ) : phoneMode === "neighbor" ? (
                 <div className="mt-5 space-y-2">
-                  <LiquidButton
-                    variant="primary"
+                  <Button
+                    variant="default"
                     data-okay
                     onClick={() => answer(phonePerson.id, "okay")}
                     className="h-11 w-full"
                   >
                     <Check />
                     {phonePerson.id === "412" ? "She's okay" : "They're okay"}
-                  </LiquidButton>
+                  </Button>
                   <Button
                     variant="secondary"
                     onClick={() => answer(phonePerson.id, "help")}
