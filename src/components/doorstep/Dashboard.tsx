@@ -2,15 +2,11 @@ import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { ClientOnly } from "@tanstack/react-router";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
-  ArrowDown,
   ArrowLeft,
   ArrowRight,
   Check,
   ChevronRight,
-  CloudLightning,
-  Crosshair,
   Footprints,
-  House,
   Layers,
   MapPin,
   MessageSquare,
@@ -22,7 +18,6 @@ import {
   Phone as PhoneIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { LiquidButton } from "@/components/ui/liquid-glass-button";
 import {
   Sheet,
   SheetContent,
@@ -38,13 +33,14 @@ import {
   planLabel,
   districtCount,
   accountedFor,
-  urgency,
   type Resident,
   type Resolutions,
   type ResponseStatus,
 } from "@/lib/doorstep-data";
 import { cn } from "@/lib/utils";
 import { StreetView } from "./StreetView";
+import { DoorstepBear, MapLoadingState } from "./DoorstepBear";
+import { IncidentGuide } from "./IncidentGuide";
 const ResponseMap = lazy(() => import("./ResponseMap"));
 type Log = { time: string; text: string };
 const groups = [
@@ -72,6 +68,14 @@ export function Dashboard() {
   const person = RESIDENTS.find((r) => r.id === selected);
   const phonePerson = RESIDENTS.find((r) => r.id === phone);
   const silent = RESIDENTS.filter((r) => (resolved[r.id] ?? r.checkInStatus) === "silent");
+  const priorityHomes = silent.filter((r) => groupFor(r) === "check");
+  const nextHome = [...silent]
+    .filter((r) => !pending[r.id])
+    .sort(
+      (a, b) =>
+        Number(groupFor(b) === "check") - Number(groupFor(a) === "check") ||
+        urgencyScore(b) - urgencyScore(a),
+    )[0];
   const ranked = [...DISTRICTS].sort(
     (a, b) => districtCount(b, resolved) - districtCount(a, resolved),
   );
@@ -200,9 +204,7 @@ export function Dashboard() {
       setSelected(null);
       setDistrict(null);
       setDemoPhase(6);
-      ["438", "452"].forEach((id) =>
-        addLog(id, "Responder team confirmed safe", "5:16pm"),
-      );
+      ["438", "452"].forEach((id) => addLog(id, "Responder team confirmed safe", "5:16pm"));
     });
     later(14000, () => {
       setDemo(false);
@@ -218,88 +220,78 @@ export function Dashboard() {
         : "Dispatch welfare check";
   return (
     <div className="dashboard-shell">
-      <header className="dashboard-header flex min-h-20 flex-wrap items-center justify-between gap-4 border-b border-border px-5 py-4 md:px-7">
-        <div className="flex items-center gap-3">
-          <span className="brand-mark grid size-10 place-items-center rounded-xl bg-primary text-primary-foreground">
-            <House className="size-6" />
-          </span>
+      <header className="dashboard-header">
+        <div className="flex min-w-0 items-center gap-3">
+          <DoorstepBear className="size-10" />
           <div>
-            <h1 className="text-2xl font-bold">
-              Doorstep<span className="text-primary">.</span>
+            <h1 className="font-display text-2xl font-bold tracking-tight">
+              Doorstep<span className="text-brand">.</span>
             </h1>
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-              State Farm · Catastrophe response
-            </p>
+            <p className="text-[11px] text-muted-foreground">Catastrophe response</p>
           </div>
         </div>
-        <div className="hidden items-center gap-2 text-sm text-muted-foreground lg:flex">
-          <span className="text-xl font-bold italic tracking-tight text-brand">
-            State Farm<sup className="ml-0.5 text-[10px] not-italic">®</sup>
-          </span>
-          <span className="mx-3 text-border">/</span> Richardson operations
+        <div className="header-context">
+          <span className="text-sm font-medium">Richardson operations</span>
+          <span className="text-xs text-muted-foreground">State Farm</span>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="header-actions flex items-center gap-3 md:gap-5">
           <span className="hidden items-center gap-2 text-xs text-muted-foreground sm:flex">
-            <span className="size-1.5 rounded-full bg-safe" /> Live response
+            <span className="size-1.5 rounded-full bg-brand" /> Live response
           </span>
-          <LiquidButton
-            variant="primary"
-            onClick={demo ? stopDemo : runDemo}
-            className="h-10 px-5"
-          >
+          <Button onClick={demo ? stopDemo : runDemo} className="h-11 gap-2 px-4">
             {demo ? <Square /> : <Play />} {demo ? "Stop demo" : "Run demo"}
-          </LiquidButton>
-          <span className="operator-avatar hidden size-9 items-center justify-center rounded-full border border-border text-xs font-semibold md:flex">
+          </Button>
+          <span
+            className="operator-avatar hidden size-9 items-center justify-center rounded-md border border-border text-xs font-semibold lg:flex"
+            aria-label="Operator MS"
+          >
             MS
           </span>
         </div>
       </header>
-      <div className="incident-summary flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4 md:px-7">
-        <div className="flex items-center gap-3">
-          <CloudLightning className="size-5 text-primary" />
-          <div>
-            <p className="text-sm font-semibold">
-              Storm hit Richardson, TX{" "}
-              <span className="font-normal text-muted-foreground">· 3 hours ago</span>
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Saturday, November 7 · Severe thunderstorm response
-            </p>
-          </div>
+      <div className="incident-summary">
+        <div className="incident-heading">
+          <p className="section-kicker">
+            Storm response <span className="text-border">/</span> North Texas
+          </p>
+          <h2 className="mt-2 font-display text-[28px] font-semibold leading-tight tracking-tight md:text-[32px]">
+            Richardson, Texas
+          </h2>
+          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+            Severe thunderstorm · Saturday, November 7 · 3 hours ago
+          </p>
         </div>
-        <div className="flex items-center gap-4" aria-live="polite">
-          <div className="text-right">
-            <p className="text-xl font-semibold tabular-nums">
-              {accountedFor(resolved).toLocaleString()}{" "}
-              <span className="text-sm font-normal text-muted-foreground">of 12,000</span>
+        <IncidentGuide
+          priorityCount={priorityHomes.length}
+          unconfirmed={32 - (accountedFor(resolved) - 11968)}
+          pendingCount={silent.filter((r) => Boolean(pending[r.id])).length}
+          nextHome={nextHome}
+          demo={demo}
+          onReview={() => {
+            if (!nextHome) return;
+            setDistrict("elm");
+            setStreetView(false);
+            openPerson(nextHome.id);
+          }}
+        />
+        <div className="incident-totals" aria-live="polite">
+          <div>
+            <p className="incident-number">
+              {accountedFor(resolved).toLocaleString()}
+              <span className="ml-2 text-sm font-normal text-muted-foreground">/ 12,000</span>
             </p>
-            <p className="text-xs text-muted-foreground">accounted for</p>
+            <p className="mt-1 text-xs text-muted-foreground">Residents accounted for</p>
           </div>
-          <div className="hidden h-8 w-px bg-border sm:block" />
-          <div className="hidden text-right sm:block">
-            <p className="text-xl font-semibold text-danger">
-              {32 - (accountedFor(resolved) - 11968)}
-            </p>
-            <p className="text-xs text-muted-foreground">still unconfirmed</p>
+          <div className="incident-unconfirmed">
+            <p className="incident-number text-danger">{32 - (accountedFor(resolved) - 11968)}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Still unconfirmed</p>
           </div>
         </div>
       </div>
       <main className="dashboard-workspace">
         <section className="map-area" aria-label="Texas response heatmap">
-          <ClientOnly
-            fallback={
-              <div className="grid h-full place-items-center text-muted-foreground">
-                Loading Texas map…
-              </div>
-            }
-          >
-            <Suspense
-              fallback={
-                <div className="grid h-full place-items-center text-muted-foreground">
-                  Loading Texas map…
-                </div>
-              }
-            >
+          <ClientOnly fallback={<MapLoadingState />}>
+            <Suspense fallback={<MapLoadingState />}>
               <ResponseMap
                 district={district}
                 resolved={resolved}
@@ -314,12 +306,13 @@ export function Dashboard() {
             <StreetView resolved={resolved} selected={selected} onSelect={openPerson} />
           )}
           {district === "elm" && (
-            <LiquidButton
+            <Button
+              variant="outline"
               className="map-float bottom-5 right-5 text-xs"
               onClick={() => setStreetView((v) => !v)}
             >
               {streetView ? "Show map" : "Show street view"}
-            </LiquidButton>
+            </Button>
           )}
           <div className="map-float left-5 top-5 flex items-center gap-3 rounded-lg px-4 py-3">
             <MapPin className="size-4 text-primary" />
@@ -363,11 +356,18 @@ export function Dashboard() {
                 </>
               ) : (
                 <div>
-                  <div className="heatmap-scale" role="img" aria-label="Relative density of people silent at home, from low in peach to high in red" />
+                  <div
+                    className="heatmap-scale"
+                    role="img"
+                    aria-label="Relative density of people silent at home, from low in peach to high in red"
+                  />
                   <div className="mt-1.5 flex justify-between text-muted-foreground">
-                    <span>Lower</span><span>Higher</span>
+                    <span>Lower</span>
+                    <span>Higher</span>
                   </div>
-                  <p className="mt-2 text-muted-foreground">Silent at home · Richardson demo data</p>
+                  <p className="mt-2 text-muted-foreground">
+                    Silent at home · Richardson demo data
+                  </p>
                 </div>
               )}
             </div>
@@ -400,103 +400,77 @@ export function Dashboard() {
           {!district ? (
             <>
               <section className="response-overview border-b border-border p-6">
-                <div className="mb-6 flex items-center justify-between">
-                  <h2 className="text-lg font-semibold">From city to doorstep</h2>
-                  <Crosshair className="size-4 text-primary" />
+                <div className="mb-6">
+                  <p className="section-kicker mb-2">
+                    01 <span className="text-border">/</span> Response overview
+                  </p>
+                  <h2 className="font-display text-[23px] font-semibold leading-tight tracking-tight">
+                    From city to doorstep
+                  </h2>
                 </div>
-                <div className="space-y-4">
+                <dl className="response-counts">
                   {[
-                    {
-                      label: "Residents in the storm's path",
-                      value: 12000,
-                      width: "100%",
-                      color: "bg-unknown",
-                      text: "text-foreground",
-                    },
-                    {
-                      label: "Replied safe",
-                      value: 11640,
-                      width: "97%",
-                      color: "bg-safe",
-                      text: "text-foreground",
-                    },
-                    {
-                      label: "Silent after check-in",
-                      value: 360 - resolvedHome,
-                      width: "53%",
-                      color: "bg-primary",
-                      text: "text-primary",
-                    },
-                    {
-                      label: "Said they'd be home",
-                      value: 35 - resolvedHome,
-                      width: "30%",
-                      color: "bg-alert",
-                      text: "text-alert",
-                    },
-                    {
-                      label: "Home + vulnerable",
-                      value: Math.max(0, 3 - resolvedHome),
-                      width: "12%",
-                      color: "bg-danger",
-                      text: "text-danger",
-                    },
-                  ].map((f, i) => (
-                    <div key={f.label}>
-                      <div className="mb-2 flex items-baseline justify-between gap-2">
-                        <span className="text-xs text-muted-foreground">{f.label}</span>
-                        <span className={cn("text-lg font-semibold tabular-nums", f.text)}>
-                          {f.value.toLocaleString()}
-                        </span>
-                      </div>
-                      <motion.div
-                        key={`${f.label}-${demo}`}
-                        className={cn("funnel-bar", f.color)}
-                        initial={{ width: 0 }}
-                        animate={{ width: f.width }}
-                        transition={{ duration: reduce ? 0 : 0.7, delay: reduce ? 0 : i * 0.15 }}
-                      />
+                    { label: "Residents in the storm's path", value: 12000 },
+                    { label: "Replied safe", value: 11640 },
+                    { label: "Silent after check-in", value: 360 - resolvedHome },
+                    { label: "Said they'd be home", value: 35 - resolvedHome },
+                    { label: "Home + vulnerable", value: Math.max(0, 3 - resolvedHome) },
+                  ].map((item, index) => (
+                    <div
+                      key={item.label}
+                      className={cn(
+                        "response-count-row",
+                        index === 4 && "response-count-row--priority",
+                      )}
+                    >
+                      <dt>{item.label}</dt>
+                      <dd>{item.value.toLocaleString()}</dd>
                     </div>
                   ))}
-                </div>
-                <p className="mt-5 flex items-center gap-2 text-xs text-danger">
-                  <Footprints className="size-4" />
-                  {Math.max(0, 3 - resolvedHome)} people need a knock first
+                </dl>
+                <p
+                  className={cn(
+                    "priority-note mt-5 flex items-start gap-2 text-xs leading-relaxed",
+                    resolvedHome < 3 ? "text-danger" : "text-foreground",
+                  )}
+                >
+                  {resolvedHome < 3 ? (
+                    <Footprints className="mt-0.5 size-4 shrink-0" />
+                  ) : (
+                    <Check className="mt-0.5 size-4 shrink-0" />
+                  )}
+                  {resolvedHome < 3
+                    ? `${3 - resolvedHome} people need a knock first`
+                    : "Priority home checks are complete"}
                 </p>
               </section>
               <section className="p-6">
-                <div className="mb-1 flex items-center justify-between">
-                  <h2 className="text-base font-semibold">Send responders here first</h2>
-                  <ArrowDown className="size-4 text-muted-foreground" />
-                </div>
-                <p className="mb-5 text-xs text-muted-foreground">
-                  Ranked by people silent at home
+                <p className="section-kicker mb-2">
+                  02 <span className="text-border">/</span> Neighborhood queue
                 </p>
-                <div className="space-y-1">
+                <h2 className="font-display text-xl font-semibold tracking-tight">
+                  Send responders here first
+                </h2>
+                <p className="mb-5 mt-2 text-xs leading-relaxed text-muted-foreground">
+                  Ranked by people silent at home.
+                </p>
+                <div className="queue-column-heads flex justify-between border-b border-border pb-2 text-[11px] text-muted-foreground">
+                  <span>Neighborhood</span>
+                  <span>Unconfirmed</span>
+                </div>
+                <div>
                   {ranked.map((d, i) => (
                     <Button
                       key={d.id}
                       variant="ghost"
                       onClick={() => setDistrict(d.id)}
-                      className="district-row h-auto min-h-14 w-full justify-start gap-3 rounded-xl px-3 py-3"
+                      className="district-row h-auto min-h-14 w-full justify-start gap-3 rounded-none px-0 py-4"
                     >
-                      <span className="w-4 text-xs text-muted-foreground">
+                      <span className="w-5 font-mono text-[11px] text-muted-foreground">
                         {String(i + 1).padStart(2, "0")}
                       </span>
-                      <span
-                        className={cn(
-                          "size-2 shrink-0 rounded-full",
-                          urgency(districtCount(d, resolved)) === "red"
-                            ? "bg-danger"
-                            : urgency(districtCount(d, resolved)) === "orange"
-                              ? "bg-alert"
-                              : districtCount(d, resolved)
-                                ? "bg-primary"
-                                : "bg-unknown",
-                        )}
-                      />
                       <span className="flex-1 text-left text-sm">{d.name}</span>
-                      <span className="text-sm tabular-nums text-muted-foreground">
+                      <span className="text-base font-semibold tabular-nums text-foreground">
                         {districtCount(d, resolved)}
                       </span>
                       <ChevronRight className="text-muted-foreground" />
@@ -518,14 +492,28 @@ export function Dashboard() {
                 >
                   <ArrowLeft /> Back to Texas
                 </Button>
-                <h2 className="text-xl font-semibold">Where to look</h2>
+                <h2 className="font-display text-2xl font-semibold tracking-tight">
+                  Where to look
+                </h2>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {activeDistrict?.name} ·{" "}
                   {district === "elm" ? silent.length : activeDistrict?.silentAtHome} unconfirmed
                 </p>
               </section>
               {district === "elm" ? (
-                <div className="space-y-6 p-5">
+                <div className="space-y-7 p-6">
+                  {silent.length === 0 && (
+                    <div className="queue-empty border-b border-border pb-6" role="status">
+                      <DoorstepBear variant="mascot" className="mb-4 h-20 w-16" />
+                      <h3 className="font-display text-xl font-semibold">
+                        No unanswered check-ins
+                      </h3>
+                      <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                        Every household in this queue has a recorded response or an assigned welfare
+                        check.
+                      </p>
+                    </div>
+                  )}
                   {groups.map((g) => {
                     const people = silent.filter((r) => groupFor(r) === g.key);
                     if (!people.length) return null;
@@ -548,7 +536,7 @@ export function Dashboard() {
                                 exit={{ opacity: 0, height: 0 }}
                                 key={r.id}
                                 className={cn(
-                                  "resident-card overflow-hidden rounded-xl border p-4",
+                                  "resident-card overflow-hidden rounded-md border p-4",
                                   g.border,
                                 )}
                               >
@@ -569,21 +557,27 @@ export function Dashboard() {
                                     </span>
                                     <span className="mt-2 flex flex-wrap gap-1">
                                       {reasons(r).map((c) => (
-                                        <span key={c} className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-foreground">
+                                        <span
+                                          key={c}
+                                          className="rounded-sm bg-secondary px-2 py-1 text-[11px] text-muted-foreground"
+                                        >
                                           {c}
                                         </span>
                                       ))}
                                     </span>
                                   </span>
-                                  <span className="grid h-8 min-w-8 place-items-center rounded-full bg-primary px-2 text-sm font-bold text-primary-foreground" title="Urgency score">
+                                  <span
+                                    className="shrink-0 border-l border-border pl-3 text-xs font-semibold tabular-nums text-danger"
+                                    title="Urgency score"
+                                  >
                                     Urgency {urgencyScore(r)}
                                   </span>
                                 </Button>
-                                <blockquote className="mt-2 border-l-2 border-primary/60 pl-2 text-xs italic text-foreground/90">
+                                <blockquote className="mt-3 border-l-2 border-border pl-3 text-sm leading-relaxed text-muted-foreground">
                                   “{r.planQuote}”
                                 </blockquote>
                                 <Ladder step={pending[r.id] ? 4 : r.silentHours >= 3 ? 2 : 1} />
-                                <LiquidButton
+                                <Button
                                   id={`act-${r.id}`}
                                   onClick={() => act(r)}
                                   disabled={Boolean(pending[r.id])}
@@ -598,7 +592,7 @@ export function Dashboard() {
                                     <ShieldCheck />
                                   )}
                                   {pending[r.id] ?? actionLabel(r)}
-                                </LiquidButton>
+                                </Button>
                               </motion.article>
                             ))}
                           </AnimatePresence>
@@ -630,7 +624,13 @@ export function Dashboard() {
                   <p className="text-sm text-muted-foreground">
                     {activeDistrict?.silentAtHome} residents silent at home
                   </p>
-                  <p className="mt-4 text-sm">Response team reviewing this district.</p>
+                  <div className="mascot-note mt-6 border-y border-border py-6">
+                    <DoorstepBear variant="mascot" className="mb-4 h-20 w-16" />
+                    <h3 className="font-display text-xl font-semibold">Neighborhood overview</h3>
+                    <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                      Household-level detail is available in the Elm demo.
+                    </p>
+                  </div>
                   <Button
                     onClick={() => setDistrict("elm")}
                     variant="outline"
@@ -642,8 +642,9 @@ export function Dashboard() {
               )}
             </>
           )}
-          <footer className="flex items-center gap-2 border-t border-border px-6 py-4 text-[10px] uppercase tracking-widest text-muted-foreground">
-            <ShieldCheck className="size-3.5" /> Simulated response · mock data
+          <footer className="flex items-center gap-2 border-t border-border px-6 py-4 text-[11px] text-muted-foreground">
+            <DoorstepBear className="size-6" /> Doorstep{" "}
+            <span className="ml-auto">Simulated response · mock data</span>
           </footer>
         </aside>
       </main>
@@ -656,10 +657,9 @@ export function Dashboard() {
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 70, opacity: 0 }}
             transition={{ duration: reduce ? 0 : 0.3 }}
-            className="phone-frame fixed bottom-5 right-5 z-[450] w-[300px] max-w-[calc(100vw-40px)] p-3"
+            className="phone-frame fixed bottom-5 right-5 z-[450] w-[340px] max-w-[calc(100vw-40px)]"
           >
-            <div className="mx-auto mb-3 h-1 w-14 rounded-full bg-border" />
-            <div className="rounded-[20px] bg-card p-4">
+            <div className="bg-card p-5">
               <div className="mb-4 flex items-center gap-2 border-b border-border pb-3">
                 <span className="grid size-8 place-items-center rounded-full bg-primary/10 text-primary">
                   <MessageSquare className="size-4" />
@@ -685,9 +685,12 @@ export function Dashboard() {
                   <X />
                 </Button>
               </div>
-              <p className="mb-4 text-center text-[10px] text-muted-foreground">
-                Saturday · 5:02 PM
-              </p>
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2 text-[10px] text-muted-foreground">
+                <span className="flex items-center gap-1.5 font-medium">
+                  <DoorstepBear className="size-5" /> Doorstep check-in
+                </span>
+                <span>Saturday · 5:02 PM</span>
+              </div>
               <p className="rounded-lg rounded-tl-none bg-secondary p-3 text-sm leading-relaxed">
                 {phoneMode === "neighbor"
                   ? `Hi ${phonePerson.neighbor.name.split(" ")[0]}, can you check on ${phonePerson.shortName} at ${phonePerson.address.replace(" St", "")}? ${phonePerson.id === "412" ? "She's" : "They're"} ${phonePerson.age}${phonePerson.livesAlone ? " and lives alone" : ""}.`
@@ -702,7 +705,7 @@ export function Dashboard() {
                     <Check className="size-3" /> Response recorded
                   </p>
                   {replies[phonePerson.id] === "No answer" && (
-                    <LiquidButton
+                    <Button
                       variant="destructive"
                       className="mt-3 w-full"
                       onClick={() => {
@@ -716,20 +719,20 @@ export function Dashboard() {
                       }}
                     >
                       Dispatch welfare check
-                    </LiquidButton>
+                    </Button>
                   )}
                 </>
               ) : phoneMode === "neighbor" ? (
                 <div className="mt-5 space-y-2">
-                  <LiquidButton
-                    variant="primary"
+                  <Button
+                    variant="default"
                     data-okay
                     onClick={() => answer(phonePerson.id, "okay")}
                     className="h-11 w-full"
                   >
                     <Check />
                     {phonePerson.id === "412" ? "She's okay" : "They're okay"}
-                  </LiquidButton>
+                  </Button>
                   <Button
                     variant="secondary"
                     onClick={() => answer(phonePerson.id, "help")}
@@ -820,10 +823,14 @@ export function Dashboard() {
                 ))}
               </ol>
               {(resolved[person.id] ?? person.checkInStatus) === "silent" && (
-                <LiquidButton variant="primary" className="mt-7 h-12 w-full whitespace-normal rounded-xl" onClick={() => act(person)}>
+                <Button
+                  variant="default"
+                  className="mt-7 h-12 w-full whitespace-normal rounded-xl"
+                  onClick={() => act(person)}
+                >
                   <Footprints />
                   {actionLabel(person)}
-                </LiquidButton>
+                </Button>
               )}
             </>
           )}
@@ -865,7 +872,7 @@ function Ladder({ step }: { step: number }) {
             />
             <span
               className={cn(
-                "mt-1.5 block whitespace-nowrap text-[9.5px] leading-tight tracking-tight",
+                "mt-1.5 block break-words text-[10px] leading-tight",
                 n === step ? "font-bold text-primary" : "text-muted-foreground",
               )}
             >

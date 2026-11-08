@@ -1,4 +1,3 @@
-import type React from "react";
 import type { Resident } from "@/lib/doorstep-data";
 import { cn } from "@/lib/utils";
 
@@ -9,7 +8,6 @@ interface Props {
   planShown: boolean;
   porch: Porch;
   urgent: boolean;
-  intensity?: number;
   delay: number;
   tag?: string | null;
   state?: "safe" | "help" | "danger" | "away" | "unknown";
@@ -17,8 +15,20 @@ interface Props {
   onClick: () => void;
 }
 
-export function House({ resident, planShown, porch, urgent, intensity = 1, delay, tag, state, selected, onClick }: Props) {
-  const away = state ? state === "away" : planShown && (resident.planAnswer === "family" || resident.planAnswer === "shelter");
+export function House({
+  resident,
+  planShown,
+  porch,
+  urgent,
+  delay,
+  tag,
+  state,
+  selected,
+  onClick,
+}: Props) {
+  const away = state
+    ? state === "away"
+    : planShown && (resident.planAnswer === "family" || resident.planAnswer === "shelter");
   const lit = state ? state === "safe" : planShown && resident.planAnswer === "home";
   const unknown = state ? state === "unknown" : planShown && resident.planAnswer === null;
   const ts = { transitionDelay: `${delay}ms` };
@@ -28,12 +38,10 @@ export function House({ resident, planShown, porch, urgent, intensity = 1, delay
       onClick={onClick}
       aria-label={`${resident.name}, ${resident.address}`}
       className={cn(
-        "group relative flex flex-col items-center rounded-2xl p-2 pt-3 transition-all duration-500 focus-visible:outline-3 focus-visible:outline-ring",
+        "group relative flex flex-col items-center rounded-sm p-2 pt-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
         selected && "house-selected",
-        urgent && "danger-glow",
-        state === "help" && "help-glow",
+        urgent && "house-urgent",
       )}
-      style={urgent ? ({ "--glow": intensity } as React.CSSProperties) : undefined}
     >
       {unknown && (
         <span className="absolute right-2 top-1 z-10 grid h-7 w-7 place-items-center rounded-full bg-unknown text-sm font-bold text-primary-foreground">
@@ -42,7 +50,12 @@ export function House({ resident, planShown, porch, urgent, intensity = 1, delay
       )}
       <svg
         viewBox="0 0 120 110"
-        className={cn("house w-full max-w-28 transition-opacity duration-700", lit && "lit", porch === "safe" && "porch-safe", porch === "help" && "porch-help")}
+        className={cn(
+          "house w-full max-w-28 transition-opacity duration-700",
+          lit && "lit",
+          porch === "safe" && "porch-safe",
+          porch === "help" && "porch-help",
+        )}
         style={{ ...ts, opacity: away ? 0.4 : 1 }}
       >
         <polygon className="roof" points="8,50 60,10 112,50" />
