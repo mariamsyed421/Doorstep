@@ -10,33 +10,141 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApiCheckinRouteImport } from './routes/api/checkin'
+import { Route as ApiClassifyRouteImport } from './routes/api/classify'
+import { Route as ApiEscalateRouteImport } from './routes/api/escalate'
+import { Route as ApiHealthRouteImport } from './routes/api/health'
+import { Route as ApiInboxRouteImport } from './routes/api/inbox'
+import { Route as ApiSheltersRouteImport } from './routes/api/shelters'
+import { Route as ApiSummarizeRouteImport } from './routes/api/summarize'
+import { Route as ApiWebhookRouteImport } from './routes/api/webhook'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiCheckinRoute = ApiCheckinRouteImport.update({
+  id: '/api/checkin',
+  path: '/api/checkin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiClassifyRoute = ApiClassifyRouteImport.update({
+  id: '/api/classify',
+  path: '/api/classify',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiEscalateRoute = ApiEscalateRouteImport.update({
+  id: '/api/escalate',
+  path: '/api/escalate',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiHealthRoute = ApiHealthRouteImport.update({
+  id: '/api/health',
+  path: '/api/health',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiInboxRoute = ApiInboxRouteImport.update({
+  id: '/api/inbox',
+  path: '/api/inbox',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSheltersRoute = ApiSheltersRouteImport.update({
+  id: '/api/shelters',
+  path: '/api/shelters',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSummarizeRoute = ApiSummarizeRouteImport.update({
+  id: '/api/summarize',
+  path: '/api/summarize',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiWebhookRoute = ApiWebhookRouteImport.update({
+  id: '/api/webhook',
+  path: '/api/webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/api/checkin': typeof ApiCheckinRoute
+  '/api/classify': typeof ApiClassifyRoute
+  '/api/escalate': typeof ApiEscalateRoute
+  '/api/health': typeof ApiHealthRoute
+  '/api/inbox': typeof ApiInboxRoute
+  '/api/shelters': typeof ApiSheltersRoute
+  '/api/summarize': typeof ApiSummarizeRoute
+  '/api/webhook': typeof ApiWebhookRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/api/checkin': typeof ApiCheckinRoute
+  '/api/classify': typeof ApiClassifyRoute
+  '/api/escalate': typeof ApiEscalateRoute
+  '/api/health': typeof ApiHealthRoute
+  '/api/inbox': typeof ApiInboxRoute
+  '/api/shelters': typeof ApiSheltersRoute
+  '/api/summarize': typeof ApiSummarizeRoute
+  '/api/webhook': typeof ApiWebhookRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/api/checkin': typeof ApiCheckinRoute
+  '/api/classify': typeof ApiClassifyRoute
+  '/api/escalate': typeof ApiEscalateRoute
+  '/api/health': typeof ApiHealthRoute
+  '/api/inbox': typeof ApiInboxRoute
+  '/api/shelters': typeof ApiSheltersRoute
+  '/api/summarize': typeof ApiSummarizeRoute
+  '/api/webhook': typeof ApiWebhookRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/api/checkin'
+    | '/api/classify'
+    | '/api/escalate'
+    | '/api/health'
+    | '/api/inbox'
+    | '/api/shelters'
+    | '/api/summarize'
+    | '/api/webhook'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/api/checkin'
+    | '/api/classify'
+    | '/api/escalate'
+    | '/api/health'
+    | '/api/inbox'
+    | '/api/shelters'
+    | '/api/summarize'
+    | '/api/webhook'
+  id:
+    | '__root__'
+    | '/'
+    | '/api/checkin'
+    | '/api/classify'
+    | '/api/escalate'
+    | '/api/health'
+    | '/api/inbox'
+    | '/api/shelters'
+    | '/api/summarize'
+    | '/api/webhook'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ApiCheckinRoute: typeof ApiCheckinRoute
+  ApiClassifyRoute: typeof ApiClassifyRoute
+  ApiEscalateRoute: typeof ApiEscalateRoute
+  ApiHealthRoute: typeof ApiHealthRoute
+  ApiInboxRoute: typeof ApiInboxRoute
+  ApiSheltersRoute: typeof ApiSheltersRoute
+  ApiSummarizeRoute: typeof ApiSummarizeRoute
+  ApiWebhookRoute: typeof ApiWebhookRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +156,75 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/checkin': {
+      id: '/api/checkin'
+      path: '/api/checkin'
+      fullPath: '/api/checkin'
+      preLoaderRoute: typeof ApiCheckinRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/classify': {
+      id: '/api/classify'
+      path: '/api/classify'
+      fullPath: '/api/classify'
+      preLoaderRoute: typeof ApiClassifyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/escalate': {
+      id: '/api/escalate'
+      path: '/api/escalate'
+      fullPath: '/api/escalate'
+      preLoaderRoute: typeof ApiEscalateRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/health': {
+      id: '/api/health'
+      path: '/api/health'
+      fullPath: '/api/health'
+      preLoaderRoute: typeof ApiHealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/inbox': {
+      id: '/api/inbox'
+      path: '/api/inbox'
+      fullPath: '/api/inbox'
+      preLoaderRoute: typeof ApiInboxRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/shelters': {
+      id: '/api/shelters'
+      path: '/api/shelters'
+      fullPath: '/api/shelters'
+      preLoaderRoute: typeof ApiSheltersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/summarize': {
+      id: '/api/summarize'
+      path: '/api/summarize'
+      fullPath: '/api/summarize'
+      preLoaderRoute: typeof ApiSummarizeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/webhook': {
+      id: '/api/webhook'
+      path: '/api/webhook'
+      fullPath: '/api/webhook'
+      preLoaderRoute: typeof ApiWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ApiCheckinRoute: ApiCheckinRoute,
+  ApiClassifyRoute: ApiClassifyRoute,
+  ApiEscalateRoute: ApiEscalateRoute,
+  ApiHealthRoute: ApiHealthRoute,
+  ApiInboxRoute: ApiInboxRoute,
+  ApiSheltersRoute: ApiSheltersRoute,
+  ApiSummarizeRoute: ApiSummarizeRoute,
+  ApiWebhookRoute: ApiWebhookRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
