@@ -56,7 +56,7 @@ async function openAiCompatible(
     body: JSON.stringify({
       model,
       temperature: 0.1,
-      max_tokens: 600,
+      max_tokens: 4096,
       messages: [
         { role: "system", content: SYSTEM },
         { role: "user", content: prompt },
@@ -64,8 +64,16 @@ async function openAiCompatible(
     }),
   });
   if (!res.ok) throw new Error(`${model} HTTP ${res.status}`);
-  const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-  const content = data.choices?.[0]?.message?.content;
+  const data = (await res.json()) as {
+    choices?: {
+      message?: {
+        content?: string | null;
+        reasoning_content?: string | null;
+      };
+    }[];
+  };
+  const message = data.choices?.[0]?.message;
+  const content = message?.content ?? message?.reasoning_content;
   if (!content) throw new Error("Empty model response");
   return content;
 }
