@@ -10,14 +10,15 @@ interface Props {
   urgent: boolean;
   delay: number;
   tag?: string | null;
+  state?: "safe" | "help" | "danger" | "away" | "unknown";
   selected: boolean;
   onClick: () => void;
 }
 
-export function House({ resident, planShown, porch, urgent, delay, tag, selected, onClick }: Props) {
-  const away = planShown && (resident.planAnswer === "family" || resident.planAnswer === "shelter");
-  const lit = planShown && resident.planAnswer === "home";
-  const unknown = planShown && resident.planAnswer === null;
+export function House({ resident, planShown, porch, urgent, delay, tag, state, selected, onClick }: Props) {
+  const away = state ? state === "away" : planShown && (resident.planAnswer === "family" || resident.planAnswer === "shelter");
+  const lit = state ? state === "safe" : planShown && resident.planAnswer === "home";
+  const unknown = state ? state === "unknown" : planShown && resident.planAnswer === null;
   const ts = { transitionDelay: `${delay}ms` };
   return (
     <button
@@ -28,6 +29,7 @@ export function House({ resident, planShown, porch, urgent, delay, tag, selected
         "group relative flex flex-col items-center rounded-2xl p-2 pt-3 transition-all duration-500 hover:bg-accent/50 focus-visible:outline-3 focus-visible:outline-ring",
         selected && "bg-accent/60",
         urgent && "danger-ring",
+        state === "help" && "help-glow",
       )}
     >
       {unknown && (
@@ -51,7 +53,8 @@ export function House({ resident, planShown, porch, urgent, delay, tag, selected
       </svg>
       <span className="mt-1 text-sm font-semibold">{resident.address.split(" ")[0]}</span>
       <span className="text-xs text-muted-foreground">{resident.shortName}</span>
-      <span className={cn("mt-1 min-h-5 max-w-32 truncate rounded-full px-2 text-xs transition-opacity duration-500", tag ? "bg-muted text-foreground opacity-100" : "opacity-0")}>
+      <span className={cn("mt-1 min-h-5 max-w-32 truncate rounded-full px-2 text-xs transition-opacity duration-500", tag ? "bg-muted text-foreground opacity-100" : "opacity-0", state === "help" && "bg-alert font-semibold text-night", state === "danger" && "bg-danger font-semibold text-primary-foreground", state === "away" && "text-[10px]")}
+        title={tag ?? undefined}>
         {tag ?? "."}
       </span>
     </button>

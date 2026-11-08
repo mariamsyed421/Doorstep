@@ -295,8 +295,9 @@
 .house.porch-help .porch { fill: var(--alert); }
 .house.porch-help .halo { fill: var(--alert); animation: pulse-halo 1.4s ease-in-out infinite; }
 @keyframes pulse-halo { 50% { opacity: 0.6; } }
-.danger-ring { outline: 2px solid var(--danger); animation: danger-ring 1.8s ease-out infinite; }
-@keyframes danger-ring { 50% { box-shadow: 0 0 0 8px color-mix(in oklab, var(--danger) 25%, transparent); } }
+.danger-ring { outline: 3px solid var(--danger); outline-offset: 2px; animation: danger-ring 1.4s ease-out infinite; }
+@keyframes danger-ring { 0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--danger) 60%, transparent); } 100% { box-shadow: 0 0 0 16px transparent; } }
+.help-glow { outline: 2px solid var(--alert); box-shadow: 0 0 22px 2px color-mix(in oklab, var(--alert) 55%, transparent); }
 @media (min-width: 1500px) {
   .dashboard-workspace {
     grid-template-columns: minmax(0, 1fr) 390px;

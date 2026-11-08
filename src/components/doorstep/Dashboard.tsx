@@ -369,10 +369,10 @@ export function Dashboard() {
                 </>
               ) : (
                 <>
-                  <LegendDot tone="bg-unknown" text="0" />
-                  <LegendDot tone="bg-primary" text="1–3" />
-                  <LegendDot tone="bg-alert" text="4–8" />
-                  <LegendDot tone="bg-danger" text="9+ · urgent" />
+                  <LegendDot tone="border border-unknown bg-unknown/10" text="0" />
+                  <LegendDot tone="border border-light bg-light/40" text="1–3" />
+                  <LegendDot tone="border border-alert bg-alert/40" text="4–8" />
+                  <LegendDot tone="border border-danger bg-danger/40" text="9+ · urgent" />
                 </>
               )}
             </div>
@@ -570,11 +570,18 @@ export function Dashboard() {
                                       </span>
                                     </span>
                                     <span className="mt-1 block text-[11px] text-muted-foreground">
-                                      {r.address} · {r.language}
+                                      {r.address}
+                                    </span>
+                                    <span className="mt-2 flex flex-wrap gap-1">
+                                      {reasons(r).map((c) => (
+                                        <span key={c} className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-foreground">
+                                          {c}
+                                        </span>
+                                      ))}
                                     </span>
                                   </span>
-                                  <span className="grid h-8 min-w-8 place-items-center rounded-full bg-primary px-2 text-sm font-bold text-primary-foreground" title="Overlooked score">
-                                    {score(r)}
+                                  <span className="grid h-8 min-w-8 place-items-center rounded-full bg-primary px-2 text-sm font-bold text-primary-foreground" title="Urgency score">
+                                    Urgency {score(r)}
                                   </span>
                                 </Button>
                                 <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
@@ -585,6 +592,9 @@ export function Dashboard() {
                                     : planLabel(r)}
                                   {r.livesAlone ? " · lives alone" : ""} · silent {r.silentHours}h
                                 </p>
+                                <blockquote className="mt-2 border-l-2 border-primary/60 pl-2 text-xs italic text-foreground/90">
+                                  “{r.planQuote}”
+                                </blockquote>
                                 <Ladder step={pending[r.id] ? 4 : r.silentHours >= 3 ? 2 : 1} />
                                 <Button
                                   id={`act-${r.id}`}
@@ -843,7 +853,15 @@ function LegendDot({ tone, text }: { tone: string; text: string }) {
   );
 }
 
-const STEPS = ["Text resent", "Voice call", "Family contacted", "Neighbor asked", "Responders flagged"];
+const STEPS = ["Text", "Call", "Family", "Neighbor", "Responders"];
+function reasons(r: Resident) {
+  const c: string[] = [];
+  if (r.livesAlone) c.push("Home alone");
+  if (r.age >= 65) c.push(`Age ${r.age}`);
+  if (r.silentHours > 0) c.push(`Silent ${r.silentHours}h`);
+  if (r.language !== "English") c.push(r.language);
+  return c;
+}
 function score(r: Resident) {
   return (r.livesAlone ? 3 : 0) + (r.age >= 70 ? 3 : 0) + (r.language !== "English" ? 2 : 0) + Math.min(r.silentHours, 4);
 }

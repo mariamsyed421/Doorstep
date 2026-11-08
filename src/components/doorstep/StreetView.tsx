@@ -1,5 +1,5 @@
 import { House as HouseArt } from "./House";
-import { RESIDENTS, markerState, type Resolutions } from "@/lib/doorstep-data";
+import { RESIDENTS, markerState, planLabel, type Resolutions } from "@/lib/doorstep-data";
 
 interface Props {
   resolved: Resolutions;
@@ -12,12 +12,16 @@ const tagFor: Record<string, string | null> = {
   help: "Needs help",
   danger: "Silent at home",
   away: "Away",
-  unknown: null,
+  unknown: "Unknown",
 };
 
 export function StreetView({ resolved, selected, onSelect }: Props) {
-  const half = Math.ceil(RESIDENTS.length / 2);
-  const rows = [RESIDENTS.slice(0, half), RESIDENTS.slice(half)];
+  const order = { danger: 0, help: 1, unknown: 2, safe: 3, away: 4 } as const;
+  const sorted = [...RESIDENTS].sort(
+    (a, b) => order[markerState(a, resolved)] - order[markerState(b, resolved)],
+  );
+  const half = Math.ceil(sorted.length / 2);
+  const rows = [sorted.slice(0, half), sorted.slice(half)];
   return (
     <div className="street-scene absolute inset-0 z-[350] overflow-y-auto px-6 pb-28 pt-24">
       {rows.map((row, i) => (
@@ -31,9 +35,10 @@ export function StreetView({ resolved, selected, onSelect }: Props) {
                   resident={r}
                   planShown
                   porch={s === "safe" ? "safe" : s === "help" ? "help" : "off"}
+                  state={s}
                   urgent={s === "danger"}
                   delay={j * 60}
-                  tag={tagFor[s] ?? null}
+                  tag={s === "away" ? planLabel(r) : (tagFor[s] ?? null)}
                   selected={selected === r.id}
                   onClick={() => onSelect(r.id)}
                 />
