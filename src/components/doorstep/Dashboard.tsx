@@ -22,8 +22,6 @@ import { Sheet, SheetContent } from "@/components/ui/sheet";
 import {
   RESIDENTS,
   DISTRICTS,
-  CITY_TOTAL,
-  OTHER_DISTRICTS_UNCONFIRMED,
   districtCount,
   accountedFor,
   unconfirmed,
@@ -333,7 +331,7 @@ export function Dashboard() {
       setDemoCaption("Event 9 · Coordinator approves a neighbor check for Mrs. Lopez");
       setSelected("412");
       setDemoPhase(3);
-    });
+    }
     later(6500, () => {
       const r = RESIDENTS.find((r) => r.id === "412");
       if (r) act(r);
@@ -361,12 +359,12 @@ export function Dashboard() {
     later(14000, () => {
       setDemo(false);
       setDemoPhase(0);
-    });
-  }
+        });
+  }, [demo, demoStep, sim.now]);
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
   const hoursAgo = Math.max(0, sim.now);
-  const unconfirmedTotal = active ? OTHER_DISTRICTS_UNCONFIRMED + elmUnconfirmed : 0;
+ const unconfirmedTotal = active ? unconfirmed(resolved) : 0;
   const nextHome = ordered.find(
     (r) =>
       active &&
@@ -376,12 +374,12 @@ export function Dashboard() {
       levelRank(assessments[r.id]!.level) >= levelRank("high"),
   );
   const counts = [
-    { label: "Residents in the storm's path", value: CITY_TOTAL },
-    { label: "Accounted for", value: active ? accountedFor(elmUnconfirmed) : 0 },
-    { label: "Still unconfirmed", value: unconfirmedTotal },
-    { label: "Unresolved inside outage zones", value: inOutage.length },
-    { label: "Urgent / high review", value: reviewNow.length },
-  ];
+  { label: "Residents in the storm's path", value: TEXAS_TOTALS.enrolled },
+  { label: "Accounted for", value: active ? accountedFor(resolved) : 0 },
+  { label: "Still unconfirmed", value: unconfirmedTotal },
+  { label: "Unresolved inside outage zones", value: inOutage.length },
+  { label: "Urgent / high review", value: reviewNow.length },
+];
 
   return (
     <div className="dashboard-shell">
