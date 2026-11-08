@@ -42,6 +42,7 @@ import {
   type ResponseStatus,
 } from "@/lib/doorstep-data";
 import { cn } from "@/lib/utils";
+import { StreetView } from "./StreetView";
 const ResponseMap = lazy(() => import("./ResponseMap"));
 type Log = { time: string; text: string };
 const groups = [
@@ -51,6 +52,7 @@ const groups = [
 ] as const;
 export function Dashboard() {
   const [district, setDistrict] = useState<string | null>(null);
+  const [streetView, setStreetView] = useState(true);
   const [resolved, setResolved] = useState<Resolutions>({});
   const [selected, setSelected] = useState<string | null>(null);
   const [drawer, setDrawer] = useState(false);
@@ -313,6 +315,18 @@ export function Dashboard() {
               />
             </Suspense>
           </ClientOnly>
+          {district === "elm" && streetView && (
+            <StreetView resolved={resolved} selected={selected} onSelect={openPerson} />
+          )}
+          {district === "elm" && (
+            <Button
+              variant="secondary"
+              className="map-float right-5 top-20"
+              onClick={() => setStreetView((v) => !v)}
+            >
+              {streetView ? "Show map" : "Show street view"}
+            </Button>
+          )}
           <div className="map-float left-5 top-5 flex items-center gap-3 rounded-lg px-4 py-3">
             <MapPin className="size-4 text-primary" />
             <div>
@@ -347,7 +361,7 @@ export function Dashboard() {
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px]">
               {district === "elm" ? (
                 <>
-                  <LegendDot tone="bg-primary" text="Safe" />
+                  <LegendDot tone="bg-light" text="Safe" />
                   <LegendDot tone="bg-alert" text="Needs help" />
                   <LegendDot tone="border-2 border-danger bg-night" text="Home + silent" />
                   <LegendDot tone="border border-unknown" text="Away ↗" />
