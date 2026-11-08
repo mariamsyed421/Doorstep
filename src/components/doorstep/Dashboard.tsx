@@ -22,6 +22,7 @@ import {
   Phone as PhoneIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { LiquidButton } from "@/components/ui/liquid-glass-button";
 import {
   Sheet,
   SheetContent,
@@ -219,7 +220,7 @@ export function Dashboard() {
     <div className="dashboard-shell">
       <header className="dashboard-header flex min-h-20 flex-wrap items-center justify-between gap-4 border-b border-border px-5 py-4 md:px-7">
         <div className="flex items-center gap-3">
-          <span className="grid size-10 place-items-center rounded-lg bg-primary text-primary-foreground">
+          <span className="brand-mark grid size-10 place-items-center rounded-xl bg-primary text-primary-foreground">
             <House className="size-6" />
           </span>
           <div>
@@ -241,13 +242,14 @@ export function Dashboard() {
           <span className="hidden items-center gap-2 text-xs text-muted-foreground sm:flex">
             <span className="size-1.5 rounded-full bg-safe" /> Live response
           </span>
-          <Button
+          <LiquidButton
+            variant="primary"
             onClick={demo ? stopDemo : runDemo}
-            className="h-10 rounded-full px-5 font-semibold"
+            className="h-10 px-5"
           >
             {demo ? <Square /> : <Play />} {demo ? "Stop demo" : "Run demo"}
-          </Button>
-          <span className="hidden size-9 items-center justify-center rounded-full border border-border text-xs md:flex">
+          </LiquidButton>
+          <span className="operator-avatar hidden size-9 items-center justify-center rounded-full border border-border text-xs font-semibold md:flex">
             MS
           </span>
         </div>
@@ -312,13 +314,12 @@ export function Dashboard() {
             <StreetView resolved={resolved} selected={selected} onSelect={openPerson} />
           )}
           {district === "elm" && (
-            <Button
-              variant="secondary"
-              className="map-float bottom-5 right-5"
+            <LiquidButton
+              className="map-float bottom-5 right-5 text-xs"
               onClick={() => setStreetView((v) => !v)}
             >
               {streetView ? "Show map" : "Show street view"}
-            </Button>
+            </LiquidButton>
           )}
           <div className="map-float left-5 top-5 flex items-center gap-3 rounded-lg px-4 py-3">
             <MapPin className="size-4 text-primary" />
@@ -398,7 +399,7 @@ export function Dashboard() {
         >
           {!district ? (
             <>
-              <section className="border-b border-border p-6">
+              <section className="response-overview border-b border-border p-6">
                 <div className="mb-6 flex items-center justify-between">
                   <h2 className="text-lg font-semibold">From city to doorstep</h2>
                   <Crosshair className="size-4 text-primary" />
@@ -477,7 +478,7 @@ export function Dashboard() {
                       key={d.id}
                       variant="ghost"
                       onClick={() => setDistrict(d.id)}
-                      className="h-auto min-h-14 w-full justify-start gap-3 rounded-md px-2 py-3"
+                      className="district-row h-auto min-h-14 w-full justify-start gap-3 rounded-xl px-3 py-3"
                     >
                       <span className="w-4 text-xs text-muted-foreground">
                         {String(i + 1).padStart(2, "0")}
@@ -547,7 +548,7 @@ export function Dashboard() {
                                 exit={{ opacity: 0, height: 0 }}
                                 key={r.id}
                                 className={cn(
-                                  "overflow-hidden rounded-lg border bg-card p-4",
+                                  "resident-card overflow-hidden rounded-xl border p-4",
                                   g.border,
                                 )}
                               >
@@ -582,12 +583,12 @@ export function Dashboard() {
                                   “{r.planQuote}”
                                 </blockquote>
                                 <Ladder step={pending[r.id] ? 4 : r.silentHours >= 3 ? 2 : 1} />
-                                <Button
+                                <LiquidButton
                                   id={`act-${r.id}`}
                                   onClick={() => act(r)}
                                   disabled={Boolean(pending[r.id])}
                                   variant={g.key === "check" ? "destructive" : "secondary"}
-                                  className="mt-3 h-auto min-h-11 w-full whitespace-normal px-2 py-2 text-xs"
+                                  className="mt-3 h-auto min-h-11 w-full whitespace-normal rounded-lg px-2 py-2 text-xs"
                                 >
                                   {g.key === "check" ? (
                                     <Footprints />
@@ -597,7 +598,7 @@ export function Dashboard() {
                                     <ShieldCheck />
                                   )}
                                   {pending[r.id] ?? actionLabel(r)}
-                                </Button>
+                                </LiquidButton>
                               </motion.article>
                             ))}
                           </AnimatePresence>
@@ -701,7 +702,7 @@ export function Dashboard() {
                     <Check className="size-3" /> Response recorded
                   </p>
                   {replies[phonePerson.id] === "No answer" && (
-                    <Button
+                    <LiquidButton
                       variant="destructive"
                       className="mt-3 w-full"
                       onClick={() => {
@@ -715,19 +716,20 @@ export function Dashboard() {
                       }}
                     >
                       Dispatch welfare check
-                    </Button>
+                    </LiquidButton>
                   )}
                 </>
               ) : phoneMode === "neighbor" ? (
                 <div className="mt-5 space-y-2">
-                  <Button
+                  <LiquidButton
+                    variant="primary"
                     data-okay
                     onClick={() => answer(phonePerson.id, "okay")}
                     className="h-11 w-full"
                   >
                     <Check />
                     {phonePerson.id === "412" ? "She's okay" : "They're okay"}
-                  </Button>
+                  </LiquidButton>
                   <Button
                     variant="secondary"
                     onClick={() => answer(phonePerson.id, "help")}
@@ -751,7 +753,7 @@ export function Dashboard() {
         )}
       </AnimatePresence>
       <Sheet open={drawer && Boolean(person)} onOpenChange={setDrawer}>
-        <SheetContent className="w-full overflow-y-auto sm:max-w-md">
+        <SheetContent className="resident-sheet w-full overflow-y-auto sm:max-w-md">
           {person && (
             <>
               <SheetHeader>
@@ -818,10 +820,10 @@ export function Dashboard() {
                 ))}
               </ol>
               {(resolved[person.id] ?? person.checkInStatus) === "silent" && (
-                <Button className="mt-7 h-12 w-full whitespace-normal" onClick={() => act(person)}>
+                <LiquidButton variant="primary" className="mt-7 h-12 w-full whitespace-normal rounded-xl" onClick={() => act(person)}>
                   <Footprints />
                   {actionLabel(person)}
-                </Button>
+                </LiquidButton>
               )}
             </>
           )}
