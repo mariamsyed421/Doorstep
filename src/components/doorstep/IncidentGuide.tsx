@@ -9,7 +9,6 @@ interface IncidentGuideProps {
   unconfirmed: number;
   pendingCount: number;
   nextHome: { shortName: string; address: string } | undefined;
-  demo: boolean;
   onReview: () => void;
 }
 
@@ -18,7 +17,6 @@ export function IncidentGuide({
   unconfirmed,
   pendingCount,
   nextHome,
-  demo,
   onReview,
 }: IncidentGuideProps) {
   const [open, setOpen] = useState(false);
@@ -99,7 +97,6 @@ export function IncidentGuide({
               </p>
               <Button
                 className="mt-4 w-full justify-between text-xs"
-                disabled={demo}
                 onClick={() => {
                   navigating.current = true;
                   setOpen(false);
@@ -108,11 +105,6 @@ export function IncidentGuide({
               >
                 Review household <ArrowRight />
               </Button>
-              {demo && (
-                <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                  The guided demo is running. You can review this household when it finishes.
-                </p>
-              )}
             </div>
           ) : (
             <p className="text-sm leading-relaxed text-muted-foreground">

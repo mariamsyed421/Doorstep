@@ -11,10 +11,7 @@ import {
   Layers,
   MapPin,
   MessageSquare,
-  Play,
-  Radio,
   ShieldCheck,
-  Square,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -68,17 +65,6 @@ import { matchesFilter, matchesSearch, queueOrder, type QueueFilter } from "./lo
 const ResponseMap = lazy(() => import("./ResponseMap"));
 const COORDINATOR = "Coordinator MS";
 
-const DEMO_CAPTIONS: [number, string][] = [
-  [5, "Event 1 · Severe thunderstorm incident opened"],
-  [20, "Event 2 · Initial check-ins sent in preferred languages"],
-  [60, "Event 3 · Residents confirming safety"],
-  [66, "Event 4 · Simulated Ting outage detected"],
-  [75, "Event 5–6 · Signal Fusion re-scored · queue re-ranked"],
-  [95, "Mr. Haddad: power out + oxygen → urgent human review"],
-  [128, "Event 7–8 · Spanish request classified · resources suggested"],
-  [186, "Escalations advancing · coordinator approvals requested"],
-];
-
 export function Dashboard() {
   const [sim, dispatch] = useReducer(simReducer, undefined, () => seededState());
   const [district, setDistrict] = useState<string | null>(null);
@@ -103,9 +89,6 @@ export function Dashboard() {
   } | null>(null);
   const [integrations, setIntegrations] = useState<Integrations | null>(null);
   const [realMessages, setRealMessages] = useState<Message[]>([]);
-  const [demo, setDemo] = useState(false);
-  const [demoStep, setDemoStep] = useState(0);
-  const [demoCaption, setDemoCaption] = useState("");
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const acc = useRef(0);
   const enriching = useRef(new Set<string>());
@@ -329,22 +312,11 @@ export function Dashboard() {
     }
   }
 
-  // ---------- Scripted demo (Events 1–9) ----------
-  function stopDemo() {
+  /** Reset the incident to before it opened and clear any open panels. */
+  function resetAll() {
     timers.current.forEach(clearTimeout);
     timers.current = [];
-    setDemo(false);
-    setDemoStep(0);
-    setDemoCaption("");
-    dispatch({ type: "set_running", running: false });
-  }
-  function runDemo() {
-    stopDemo();
     dispatch({ type: "reset" });
-    dispatch({ type: "set_speed", secondsPerSimHour: 10 });
-    dispatch({ type: "set_running", running: true });
-    setDemo(true);
-    setDemoStep(1);
     setDistrict(null);
     setCounty(null);
     setFilter("all");
@@ -357,43 +329,6 @@ export function Dashboard() {
     setPhone(null);
     setWalking(null);
   }
-  useEffect(() => {
-    if (!demo) return;
-    const caption = [...DEMO_CAPTIONS].find(([t]) => sim.now < t)?.[1];
-    if (caption && demoStep < 6) setDemoCaption(caption);
-    if (demoStep === 1 && sim.now >= 6) {
-      setDistrict("elm");
-      setStreetView(false);
-      setDemoStep(2);
-    } else if (demoStep === 2 && sim.now >= 96) {
-      openPerson("441");
-      setDemoStep(3);
-    } else if (demoStep === 3 && sim.now >= 128) {
-      setDrawer(false);
-      setSelected(null);
-      setDemoStep(4);
-    } else if (demoStep === 4 && sim.now >= 186) {
-      dispatch({ type: "set_running", running: false });
-      setDemoStep(6);
-      setDemoCaption("Event 9 · Coordinator approves a neighbor check for Mrs. Lopez");
-      setSelected("412");
-      later(1500, () => {
-        const r = RESIDENTS.find((x) => x.id === "412");
-        if (r) approveAction(r, 4);
-      });
-      later(4500, () => {
-        answer("412", "okay");
-        setDemoCaption("Neighbor confirmed Mrs. Lopez is safe · silence escalation stopped");
-      });
-      later(8000, () => {
-        setDemo(false);
-        setDemoStep(0);
-        setDemoCaption("");
-        setPhone(null);
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [demo, demoStep, sim.now]);
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
   const hoursAgo = Math.max(0, sim.now);
@@ -453,9 +388,6 @@ export function Dashboard() {
             />
             {sim.running ? "Simulation running" : "Simulation paused"}
           </span>
-          <Button onClick={demo ? stopDemo : runDemo} className="h-11 gap-2 px-4">
-            {demo ? <Square /> : <Play />} {demo ? "Stop demo" : "Run demo"}
-          </Button>
           <span
             className="operator-avatar hidden size-9 items-center justify-center rounded-md border border-border text-xs font-semibold lg:flex"
             aria-label="Operator MS"
@@ -480,7 +412,7 @@ export function Dashboard() {
             · {sim.incident.id} · {TEXAS_TOTALS.outages.toLocaleString()} without power
           </p>
           <div className="mt-3">
-            <SimControls sim={sim} dispatch={dispatch} disabled={demo} />
+            <SimControls sim={sim} dispatch={dispatch} onReset={resetAll} />
           </div>
         </div>
         <IncidentGuide
@@ -488,7 +420,6 @@ export function Dashboard() {
           unconfirmed={unconfirmedTotal}
           pendingCount={Object.keys(pending).length}
           nextHome={nextHome}
-          demo={demo}
           onReview={() => {
             if (!nextHome) return;
             setDistrict("elm");
@@ -629,15 +560,6 @@ export function Dashboard() {
               )}
             </div>
           </div>
-          {demo && demoCaption && (
-            <div
-              className="map-float bottom-32 left-5 rounded-lg px-4 py-3 text-xs text-primary"
-              aria-live="polite"
-            >
-              <Radio className="mr-2 inline size-4" />
-              {demoCaption}
-            </div>
-          )}
           <span className="map-float right-5 top-5 hidden items-center gap-2 rounded-lg px-3 py-2 text-[11px] text-muted-foreground sm:flex">
             <Layers className="size-3.5" />
             {district ? "Neighborhood view" : county ? "County view" : "Texas heatmap"}
