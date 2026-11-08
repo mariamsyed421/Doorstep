@@ -31,4 +31,4 @@ use the editor.
 
 ## Project rules
 - Doorstep is front-end only: mock district and household data lives in src/lib/doorstep-data.ts; response state, logs, and scripted demo timers live in Dashboard so no backend is required.
-- Load ResponseMap lazily behind ClientOnly to keep Leaflet and MapLibre browser imports out of SSR; use the explicit Vite MapLibre worker URL and OpenFreeMap keyless dark style.
+- Load ResponseMap lazily behind ClientOnly to keep Leaflet and MapLibre browser imports out of SSR; use the explicit Vite MapLibre worker URL and OpenFreeMap keyless Positron light style.
