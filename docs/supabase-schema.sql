@@ -22,6 +22,8 @@ create table if not exists public.residents (
   consent jsonb not null default '{}'::jsonb,  -- automatedMessages, voiceCalls, contactEmergencyContact, ...
   created_at timestamptz not null default now()
 );
+grant select on public.residents to authenticated;
+grant all on public.residents to service_role;
 
 create table if not exists public.incidents (
   id text primary key,
@@ -30,6 +32,8 @@ create table if not exists public.incidents (
   started_at timestamptz not null default now(),
   status text not null default 'active' check (status in ('pending','active','closed'))
 );
+grant select on public.incidents to authenticated;
+grant all on public.incidents to service_role;
 
 create table if not exists public.check_ins (
   id uuid primary key default gen_random_uuid(),
@@ -46,6 +50,8 @@ create table if not exists public.check_ins (
   idempotency_key text unique,
   created_at timestamptz not null default now()
 );
+grant select on public.check_ins to authenticated;
+grant all on public.check_ins to service_role;
 
 create table if not exists public.priority_assessments (
   resident_id text not null references public.residents(id),
@@ -60,6 +66,8 @@ create table if not exists public.priority_assessments (
   updated_at timestamptz not null default now(),
   primary key (resident_id, incident_id)
 );
+grant select on public.priority_assessments to authenticated;
+grant all on public.priority_assessments to service_role;
 
 create table if not exists public.escalation_events (
   id uuid primary key default gen_random_uuid(),
@@ -74,6 +82,8 @@ create table if not exists public.escalation_events (
   created_at timestamptz not null default now(),
   constraint third_party_needs_approval check (stage < 3 or approved_by is not null)
 );
+grant select on public.escalation_events to authenticated;
+grant all on public.escalation_events to service_role;
 
 create table if not exists public.outage_events (
   id text primary key,
@@ -89,6 +99,8 @@ create table if not exists public.outage_events (
   detected_at timestamptz not null default now(),
   active boolean not null default true
 );
+grant select on public.outage_events to anon, authenticated;
+grant all on public.outage_events to service_role;
 
 create table if not exists public.resources (
   id text primary key,
@@ -104,6 +116,8 @@ create table if not exists public.resources (
   source text not null,                        -- 'FEMA NSS' | 'Synthetic demo data'
   updated_at timestamptz
 );
+grant select on public.resources to anon, authenticated;
+grant all on public.resources to service_role;
 
 -- Row-level security: no anonymous access to resident data. The server routes use the
 -- service-role key (bypasses RLS); authenticated coordinators may read.
