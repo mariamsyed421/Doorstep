@@ -405,9 +405,9 @@ export function Dashboard() {
 
   return (
     <div className="dashboard-shell">
-      <header className="flex min-h-20 flex-wrap items-center justify-between gap-4 border-b border-border px-5 py-4 md:px-7">
+      <header className="dashboard-header flex min-h-20 flex-wrap items-center justify-between gap-4 border-b border-border px-5 py-4 md:px-7">
         <div className="flex items-center gap-3">
-          <span className="grid size-10 place-items-center rounded-lg bg-primary/10 text-primary">
+          <span className="grid size-10 place-items-center rounded-lg bg-primary text-primary-foreground">
             <House className="size-6" />
           </span>
           <div>
@@ -415,17 +415,14 @@ export function Dashboard() {
               Doorstep<span className="text-primary">.</span>
             </h1>
             <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-              Catastrophe response
+              State Farm · Catastrophe response
             </p>
           </div>
         </div>
         <div className="hidden items-center gap-2 text-sm text-muted-foreground lg:flex">
-          <span className="flex gap-1 text-brand">
-            <span className="size-2 rounded-full bg-brand" />
-            <span className="size-2 rounded-full bg-brand" />
-            <span className="size-2 rounded-full bg-brand" />
+          <span className="text-xl font-bold italic tracking-tight text-brand">
+            State Farm<sup className="ml-0.5 text-[10px] not-italic">®</sup>
           </span>
-          <span className="font-semibold text-foreground">State Farm</span>
           <span className="mx-3 text-border">/</span> Richardson operations
         </div>
         <div className="flex items-center gap-4">
@@ -435,8 +432,7 @@ export function Dashboard() {
           </span>
           <Button
             onClick={demo ? stopDemo : runDemo}
-            variant="outline"
-            className="h-10 border-primary/40 text-primary"
+            className="h-10 rounded-full px-5 font-semibold"
           >
             {demo ? <Square /> : <Play />} {demo ? "Stop demo" : "Run demo"}
           </Button>
@@ -445,7 +441,7 @@ export function Dashboard() {
           </span>
         </div>
       </header>
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-card px-5 py-4 md:px-7">
+      <div className="incident-summary flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4 md:px-7">
         <div className="flex items-center gap-3">
           <CloudLightning className="size-5 text-primary" />
           <div>
@@ -484,18 +480,18 @@ export function Dashboard() {
         </div>
       </div>
       <main className="dashboard-workspace">
-        <section className="map-area" aria-label="Richardson response map">
+        <section className="map-area" aria-label="Texas response heatmap">
           <ClientOnly
             fallback={
               <div className="grid h-full place-items-center text-muted-foreground">
-                Loading Richardson map…
+                Loading Texas map…
               </div>
             }
           >
             <Suspense
               fallback={
                 <div className="grid h-full place-items-center text-muted-foreground">
-                  Loading Richardson map…
+                  Loading Texas map…
                 </div>
               }
             >
@@ -542,21 +538,21 @@ export function Dashboard() {
           <div className="map-float left-5 top-5 flex items-center gap-3 rounded-lg px-4 py-3">
             <MapPin className="size-4 text-primary" />
             <div>
-              <p className="text-sm font-semibold">{activeDistrict?.name ?? "Richardson, Texas"}</p>
+              <p className="text-sm font-semibold">{activeDistrict?.name ?? "Texas"}</p>
               <p className="text-[11px] text-muted-foreground">
                 {district === "elm"
                   ? `${RESIDENTS.length} households · Elm Street`
                   : district
                     ? `${activeDistrict?.totalResidents.toLocaleString()} residents`
-                    : "9 neighborhoods · Dallas County"}
+                    : "Richardson response · 9 neighborhoods"}
               </p>
             </div>
             {district && (
               <Button
                 variant="ghost"
                 size="icon"
-                title="Back to city"
-                aria-label="Back to city"
+                title="Back to Texas"
+                aria-label="Back to Texas"
                 onClick={() => {
                   setDistrict(null);
                   setSelected(null);
@@ -568,15 +564,14 @@ export function Dashboard() {
           </div>
           <div className="map-float left-5 bottom-10 max-w-[calc(100%-40px)] rounded-lg px-4 py-3">
             <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-              {district === "elm" ? "Household status" : "Unconfirmed households"}
+              {district === "elm" ? "Household status" : "Response density"}
             </p>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px]">
               {district === "elm" ? (
                 <>
-                  <LegendDot tone="bg-safe" text="Confirmed safe" />
-                  <LegendDot tone="bg-alert" text="Needs assistance" />
-                  <LegendDot tone="border-2 border-danger bg-night" text="Urgent review" />
-                  <LegendDot tone="bg-light" text="Awaiting reply" />
+                  <LegendDot tone="bg-safe" text="Safe" />
+                  <LegendDot tone="bg-alert" text="Needs help" />
+                  <LegendDot tone="border-2 border-danger bg-card" text="Home + silent" />
                   <LegendDot tone="border border-unknown" text="Away ↗" />
                   <LegendDot tone="bg-unknown" text="Unknown ?" />
                   {sim.outages.length > 0 && (
@@ -587,12 +582,13 @@ export function Dashboard() {
                   )}
                 </>
               ) : (
-                <>
-                  <LegendDot tone="border border-unknown bg-unknown/10" text="0" />
-                  <LegendDot tone="border border-light bg-light/40" text="1–3" />
-                  <LegendDot tone="border border-alert bg-alert/40" text="4–8" />
-                  <LegendDot tone="border border-danger bg-danger/40" text="9+ · urgent" />
-                </>
+                <div>
+                  <div className="heatmap-scale" role="img" aria-label="Relative density of people silent at home, from low in peach to high in red" />
+                  <div className="mt-1.5 flex justify-between text-muted-foreground">
+                    <span>Lower</span><span>Higher</span>
+                  </div>
+                  <p className="mt-2 text-muted-foreground">Silent at home · Richardson demo data</p>
+                </div>
               )}
             </div>
           </div>
@@ -605,9 +601,9 @@ export function Dashboard() {
               {demoCaption}
             </div>
           )}
-          <span className="map-float right-5 top-5 flex items-center gap-2 rounded-lg px-3 py-2 text-[11px] text-muted-foreground">
+          <span className="map-float right-5 top-5 hidden items-center gap-2 rounded-lg px-3 py-2 text-[11px] text-muted-foreground sm:flex">
             <Layers className="size-3.5" />
-            {district ? "Neighborhood view" : "City view"}
+            {district ? "Neighborhood view" : "Texas heatmap"}
           </span>
         </section>
         <aside
@@ -698,7 +694,7 @@ export function Dashboard() {
                     setSelected(null);
                   }}
                 >
-                  <ArrowLeft /> Back to city
+                  <ArrowLeft /> Back to Texas
                 </Button>
                 <h2 className="text-xl font-semibold">Priority queue</h2>
                 <p className="mt-1 text-xs text-muted-foreground">

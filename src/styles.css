@@ -22,7 +22,7 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--foreground);
   --color-destructive: var(--danger);
-  --color-destructive-foreground: var(--foreground);
+  --color-destructive-foreground: var(--primary-foreground);
   --color-border: var(--border);
   --color-input: var(--border);
   --color-ring: var(--primary);
@@ -39,24 +39,24 @@
   --radius-xl: 12px;
 }
 :root {
-  --background: oklch(0.17 0.005 170);
-  --foreground: oklch(0.94 0.008 90);
-  --card: oklch(0.205 0.007 170);
-  --primary: oklch(0.58 0.22 24);
-  --primary-foreground: oklch(0.98 0.005 90);
-  --light: oklch(0.83 0.14 82);
-  --secondary: oklch(0.26 0.009 170);
-  --muted: oklch(0.245 0.008 170);
-  --muted-foreground: oklch(0.68 0.013 150);
-  --accent: oklch(0.31 0.01 170);
-  --border: oklch(0.31 0.008 170);
-  --danger: oklch(0.7 0.19 18);
-  --alert: oklch(0.76 0.155 55);
-  --safe: oklch(0.76 0.11 160);
-  --unknown: oklch(0.63 0.015 170);
-  --night: oklch(0.12 0.006 170);
-  --brand: oklch(0.62 0.21 26);
-  --map-shadow: 0 8px 24px oklch(0 0 0 / 0.35);
+  --background: #f5f5f5;
+  --foreground: #242424;
+  --card: #ffffff;
+  --primary: #e1261c;
+  --primary-foreground: #ffffff;
+  --light: #edb34c;
+  --secondary: #f0f0f0;
+  --muted: #ededed;
+  --muted-foreground: #626262;
+  --accent: #fcece9;
+  --border: #dedede;
+  --danger: #c82018;
+  --alert: #956008;
+  --safe: #24764a;
+  --unknown: #767d85;
+  --night: #202428;
+  --brand: #e1261c;
+  --map-shadow: 0 4px 18px rgb(0 0 0 / 0.14);
 }
 @layer base {
   * {
@@ -85,10 +85,17 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) 350px;
 }
+.dashboard-header {
+  border-top: 4px solid var(--brand);
+  background: var(--card);
+}
+.incident-summary {
+  background: #fff6f3;
+}
 .response-map {
   width: 100%;
   height: 100%;
-  background: var(--night);
+  background: var(--card);
   z-index: 0;
 }
 .map-area {
@@ -136,9 +143,9 @@
 .district-name-marker {
   text-align: center;
   color: var(--foreground);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  text-shadow: 0 1px 3px var(--night);
+  text-shadow: 0 1px 3px #ffffff, 0 0 6px #ffffff;
 }
 .district-name-marker span {
   display: block;
@@ -148,6 +155,41 @@
   display: block;
   margin-top: 3px;
   font-size: 17px;
+}
+.region-name-marker {
+  width: max-content !important;
+  height: auto !important;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--brand);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: var(--map-shadow);
+  font-family: var(--font-sans);
+}
+.region-name-marker strong,
+.region-name-marker span {
+  display: block;
+}
+.region-name-marker strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.region-name-marker span {
+  margin-top: 4px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.heatmap-scale {
+  height: 6px;
+  width: 180px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #f6c6a8, #f39465, #ec6245, #e1261c);
+}
+.texas-outline {
+  stroke: var(--primary);
+  fill: var(--primary);
 }
 .district-polygon {
   transition: fill-opacity 0.5s;
@@ -159,7 +201,6 @@
 .district-red {
   fill: var(--danger);
   stroke: var(--danger);
-  animation: district-pulse 3s ease-in-out infinite;
 }
 .district-orange {
   fill: var(--alert);
@@ -174,12 +215,6 @@
   stroke: var(--unknown);
   fill-opacity: 0.03;
 }
-@keyframes district-pulse {
-  50% {
-    fill-opacity: 0.28;
-    filter: drop-shadow(0 0 8px var(--danger));
-  }
-}
 .household-marker {
   display: grid;
   place-items: center;
@@ -190,44 +225,19 @@
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  border: 2px solid var(--night);
+  border: 2px solid var(--card);
   font-weight: 700;
   font-size: 12px;
 }
 .porch-dot.safe {
   background: var(--safe);
-  box-shadow: 0 0 9px 4px color-mix(in oklab, var(--safe) 35%, transparent);
-}
-.porch-dot.awaiting {
-  background: var(--light);
-  box-shadow: 0 0 6px 2px color-mix(in oklab, var(--light) 30%, transparent);
-}
-.household-marker.is-selected .porch-dot {
-  outline: 3px solid var(--foreground);
-  outline-offset: 3px;
-}
-.outage-zone.outage-power {
-  fill: var(--alert);
-  stroke: var(--alert);
-  fill-opacity: 0.1;
-}
-.outage-zone.outage-communications {
-  fill: var(--unknown);
-  stroke: var(--foreground);
-  fill-opacity: 0.06;
-}
-.silence-heat {
-  fill: var(--danger);
-  pointer-events: none;
 }
 .porch-dot.help {
   background: var(--alert);
-  animation: help-pulse 2s infinite;
 }
 .porch-dot.danger {
-  background: var(--night);
+  background: var(--card);
   border: 2px solid var(--danger);
-  animation: danger-pulse 2s infinite;
 }
 .porch-dot.away {
   width: 19px;
@@ -241,18 +251,6 @@
   height: 22px;
   background: var(--unknown);
   color: var(--night);
-}
-@keyframes danger-pulse {
-  50% {
-    box-shadow:
-      0 0 0 9px color-mix(in oklab, var(--danger) 18%, transparent),
-      0 0 14px var(--danger);
-  }
-}
-@keyframes help-pulse {
-  50% {
-    box-shadow: 0 0 12px 4px color-mix(in oklab, var(--alert) 50%, transparent);
-  }
 }
 .walking-route {
   stroke: var(--primary);
@@ -283,7 +281,7 @@
 .response-panel {
   overflow-y: auto;
   border-left: 1px solid var(--border);
-  background: var(--background);
+  background: var(--card);
 }
 .funnel-bar {
   height: 5px;
@@ -297,6 +295,11 @@
   box-shadow: var(--map-shadow);
 }
 .street-scene {
+  --foreground: #f9fafb;
+  --muted-foreground: #bac1c7;
+  --muted: #394047;
+  --secondary: #30373d;
+  color: var(--foreground);
   background: radial-gradient(ellipse at top, oklch(0.22 0.02 250), var(--night) 70%);
 }
 .street-road {
