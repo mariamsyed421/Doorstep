@@ -17,6 +17,7 @@ import { checkInTemplate, classifyWithRules, summarizeWithRules } from "./rules"
  * dispatch responders, contact anyone, or change scores (scoring is deterministic).
  */
 const TIMEOUT_MS = 5000;
+const NEMOTRON_TIMEOUT_MS = 15000;
 
 const SYSTEM = `You help disaster-response coordinators triage short replies from residents.
 Return ONLY a JSON object. Never invent facts. Never recommend dispatching responders yourself;
@@ -165,7 +166,10 @@ async function run<S extends z.ZodTypeAny>(
 ): Promise<{ value: z.infer<S>; provider: Exclude<AiProvider, "rules"> } | null> {
   for (const p of providerChain()) {
     try {
-      const raw = await withTimeout((signal) => p.call(prompt, signal));
+      const raw = await withTimeout(
+        (signal) => p.call(prompt, signal),
+        p.name === "nemotron" ? NEMOTRON_TIMEOUT_MS : TIMEOUT_MS,
+      );
       const parsed = schema.safeParse(extractJson(raw));
       if (parsed.success) return { value: parsed.data, provider: p.name };
       console.warn(`[ai] ${p.name} returned invalid JSON shape`);
