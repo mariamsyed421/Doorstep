@@ -17,6 +17,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   RESIDENTS,
   DISTRICTS,
   districtCount,
@@ -65,7 +72,10 @@ import { matchesFilter, matchesSearch, queueOrder, type QueueFilter } from "./lo
 const ResponseMap = lazy(() => import("./ResponseMap"));
 const COORDINATOR = "Coordinator MS";
 
+const CATASTROPHES = ["Storm", "Hurricane", "Flood", "Wildfire", "Winter storm", "Tornado"];
+
 export function Dashboard() {
+  const [catastrophe, setCatastrophe] = useState(CATASTROPHES[0]!);
   const [sim, dispatch] = useReducer(simReducer, undefined, () => seededState());
   const [district, setDistrict] = useState<string | null>(null);
   const [county, setCounty] = useState<string | null>(null);
@@ -375,6 +385,18 @@ export function Dashboard() {
           </h1>
         </div>
         <div className="header-actions flex items-center gap-3 md:gap-5">
+          <Select value={catastrophe} onValueChange={setCatastrophe}>
+            <SelectTrigger className="h-9 w-[150px] text-sm" aria-label="Catastrophe type">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {CATASTROPHES.map((c) => (
+                <SelectItem key={c} value={c}>
+                  {c}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <span className="hidden items-center gap-2 text-xs text-muted-foreground sm:flex">
             <span
               className={cn("size-1.5 rounded-full", sim.running ? "bg-brand" : "bg-unknown")}
@@ -386,7 +408,7 @@ export function Dashboard() {
       <div className="incident-summary">
         <div className="incident-heading">
           <p className="section-kicker">
-            Storm response <span className="text-border">/</span> Statewide
+            {catastrophe} response <span className="text-border">/</span> Statewide
           </p>
           <h2 className="mt-2 font-display text-[28px] font-semibold leading-tight tracking-tight md:text-[32px]">
             Texas
