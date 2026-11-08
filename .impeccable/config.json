@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "nested-cards",
+        "value": "*",
+        "files": [
+          "brag-output/work/comp.html"
+        ],
+        "createdAt": "2026-11-08T08:12:37.716Z",
+        "reason": "Claude: the check-in outbox panel lists sent text messages as message items inside a panel (an inbox pattern), in a gitignored, throwaway video composition"
+      }
+    ]
+  }
+}

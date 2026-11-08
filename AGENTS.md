@@ -30,5 +30,7 @@ use the editor.
 <!-- LOVABLE:END -->
 
 ## Project rules
-- Doorstep is front-end only: mock district and household data lives in src/lib/doorstep-data.ts; response state, logs, and scripted demo timers live in Dashboard so no backend is required.
+- The demo must work with no backend or credentials: synthetic households live in src/lib/doorstep-data.ts; the response simulation (clock, scripted events, escalation, mock delivery) is a pure reducer in src/lib/doorstep/simulation.ts driven by Dashboard. /api/* server routes (TanStack Start) add Nemotron/Gemini, Photon, FEMA and Supabase only when configured, and the browser always has a deterministic fallback.
+- Signal Fusion scoring (src/lib/doorstep/scoring.ts) is deterministic and never calls an LLM. Never score age, language, disability identity, insurance or renter status.
+- Third-party outreach and welfare checks (escalation stages 3–5) always require coordinator approval. Label simulated integrations (Ting outages, mock messaging, synthetic shelters) as simulated in the UI.
 - Load ResponseMap lazily behind ClientOnly to keep Leaflet and MapLibre browser imports out of SSR; use the explicit Vite MapLibre worker URL and OpenFreeMap keyless Positron light style.
