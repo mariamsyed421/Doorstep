@@ -39,6 +39,7 @@ import {
   inbox,
   loadShelters,
   recordEscalation,
+  sendCheckin,
   type Integrations,
 } from "@/lib/doorstep/api";
 import { activeOutagesAt } from "@/lib/doorstep/outages";
@@ -54,6 +55,7 @@ import {
   wallClock,
   formatClock,
   type MarkerState,
+  type Message,
 } from "@/lib/doorstep/simulation";
 import { cn } from "@/lib/utils";
 import { StreetView } from "./StreetView";
@@ -97,6 +99,7 @@ export function Dashboard() {
     warning?: string;
   } | null>(null);
   const [integrations, setIntegrations] = useState<Integrations | null>(null);
+  const [realMessages, setRealMessages] = useState<Message[]>([]);
   const [demo, setDemo] = useState(false);
   const [demoStep, setDemoStep] = useState(0);
   const [demoCaption, setDemoCaption] = useState("");
@@ -296,6 +299,31 @@ export function Dashboard() {
     const c = await classify(text, person.id);
     dispatch({ type: "reply", residentId: person.id, text, classification: c });
     setBusy(false);
+  }
+
+  async function sendRealCheckin() {
+    if (!person || !integrations?.photon || integrations.photonResidentId !== person.id) return;
+    setBusy(true);
+    try {
+      const out = await sendCheckin(person.id);
+      if (out.delivery.provider !== "photon") throw new Error("Photon delivery was not used");
+      setRealMessages((messages) => [
+        ...messages,
+        {
+          id: out.delivery.messageId || `photon-${Date.now()}`,
+          residentId: person.id,
+          at: sim.now,
+          direction: "out",
+          channel: "sms",
+          text: out.text,
+          from: "doorstep",
+          status: out.delivery.status,
+          provider: "photon",
+        },
+      ]);
+    } finally {
+      setBusy(false);
+    }
   }
 
   // ---------- Scripted demo (Events 1–9) ----------
@@ -901,6 +929,11 @@ export function Dashboard() {
               assessment={assessments[person.id]!}
               shelters={shelters}
               busy={busy || Boolean(pending[person.id])}
+              realMessages={realMessages}
+              canSendRealCheckin={Boolean(
+                integrations?.photon && integrations.photonResidentId === person.id,
+              )}
+              onSendRealCheckin={sendRealCheckin}
               onApprove={approveAction}
               onSimulateReply={simulateReply}
             />

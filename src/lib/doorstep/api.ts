@@ -54,6 +54,19 @@ export async function recordEscalation(residentId: string, stage: number, approv
   }
 }
 
+export async function sendCheckin(residentId: string) {
+  return post<{
+    text: string;
+    delivery: {
+      provider: "mock" | "photon";
+      simulated: boolean;
+      messageId: string;
+      status: "queued" | "delivered" | "failed";
+      error?: string;
+    };
+  }>("/api/checkin", { residentId, channel: "sms", stage: 0 });
+}
+
 export async function loadShelters(): Promise<{
   shelters: Shelter[];
   source: string;
@@ -77,6 +90,7 @@ export interface Integrations {
   nemotron: boolean;
   gemini: boolean;
   photon: boolean;
+  photonResidentId?: string;
   supabase: boolean;
   fema: boolean;
 }

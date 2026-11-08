@@ -72,7 +72,7 @@ function profileFor(x: ResidentInput): PreparednessProfile {
   const base: PreparednessProfile = {
     householdSize: x.livesAlone ? 1 : 2 + (n % 3),
     contactChannels: ["sms", "voice"],
-    phone: `555-01${String(n % 100).padStart(2, "0")}`,
+    phone: n === 412 ? "+12142185559" : `555-01${String(n % 100).padStart(2, "0")}`,
     needs: {
       powerDependentEquipment: m.includes("oxygen")
         ? "Home oxygen concentrator"

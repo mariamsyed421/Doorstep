@@ -100,7 +100,7 @@ set to 30, 60 or 120 simulated minutes. Fast-forward speeds include **1 simulate
 | Resident profiles | **Synthetic**, STEAR-*inspired* fields. No access to real STEAR records | — |
 | Ting outages | **Simulated** feed, labeled in the UI. Not connected to Ting | — |
 | AI (Nemotron / Gemini) | Real when keys are set; otherwise deterministic rules (labeled "rules") | `NVIDIA_API_KEY`, `LOVABLE_API_KEY` or `GEMINI_API_KEY`, `AI_PROVIDER` |
-| Messaging (Photon) | **Mock provider** by default. The Photon adapter is **unverified** (Photon's docs could not be reached while building). Endpoint, path and signature header are configuration | `PHOTON_*` incl. `PHOTON_DEMO_RECIPIENT` |
+| Messaging (Photon) | Spectrum iMessage provider sends only to the resident whose synthetic phone matches `PHOTON_DEMO_RECIPIENT`; all other residents use the mock provider | `SPECTRUM_PROJECT_ID`, `SPECTRUM_PROJECT_SECRET`, `PHOTON_DEMO_RECIPIENT` |
 | FEMA shelters | Real NSS ArcGIS lookup when reachable. Field names are read from layer metadata. Falls back to labeled synthetic shelters | `FEMA_NSS_LAYER_URL` |
 | Supabase | Optional persistence of check-ins / escalations via PostgREST, plus inbox polling for webhook replies | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` |
 | Insurance | General documentation guidance only, shown after safety is resolved. No insurer integration | — |

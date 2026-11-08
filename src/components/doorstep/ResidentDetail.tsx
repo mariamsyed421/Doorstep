@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { planLabel, type Resident } from "@/lib/doorstep-data";
+import type { Message } from "@/lib/doorstep/simulation";
 import { summarize } from "@/lib/doorstep/api";
 import { STAGES, allowed, type Stage } from "@/lib/doorstep/escalation";
 import { RECOVERY_GUIDANCE, insuranceNote } from "@/lib/doorstep/insurance";
@@ -32,6 +33,9 @@ interface Props {
   assessment: Assessment;
   shelters: { shelters: Shelter[]; source: string; warning?: string } | null;
   busy: boolean;
+  realMessages: Message[];
+  canSendRealCheckin: boolean;
+  onSendRealCheckin: () => Promise<void>;
   onApprove: (r: Resident, stage: 3 | 4 | 5) => void;
   onSimulateReply: (text: string) => Promise<void>;
 }
@@ -42,13 +46,16 @@ export function ResidentDetail({
   assessment: a,
   shelters,
   busy,
+  realMessages,
+  canSendRealCheckin,
+  onSendRealCheckin,
   onApprove,
   onSimulateReply,
 }: Props) {
   const esc = sim.escalations[person.id];
   const sig = sim.signals[person.id];
   const reply = sig?.latestReply ?? null;
-  const msgs = sim.messages.filter((m) => m.residentId === person.id);
+  const msgs = [...sim.messages, ...realMessages].filter((m) => m.residentId === person.id);
   const p = person.profile;
   const [draft, setDraft] = useState("");
   const [summary, setSummary] = useState<{ text: string; provider: string } | null>(null);
@@ -428,6 +435,18 @@ export function ResidentDetail({
             </li>
           ))}
       </ol>
+
+      {canSendRealCheckin && (
+        <Button
+          variant="outline"
+          className="mb-5 w-full border-primary text-primary"
+          disabled={busy}
+          onClick={() => void onSendRealCheckin()}
+        >
+          {busy ? <Loader2 className="animate-spin" /> : <Send />}
+          Send real check-in
+        </Button>
+      )}
 
       {/* ---------- Demo tool ---------- */}
       <section className="mt-8 rounded-lg border border-dashed border-border p-4">

@@ -3,6 +3,7 @@ import { RESIDENTS } from "@/lib/doorstep-data";
 import { checkInTemplate } from "@/lib/doorstep/ai/rules";
 import { draftCheckIn } from "@/lib/doorstep/ai/service.server";
 import { json, parseBody } from "@/lib/doorstep/http.server";
+import { createPhotonProvider, photonDemoResidentId } from "@/lib/doorstep/messaging/photon.server";
 import { messagingProvider } from "@/lib/doorstep/messaging/provider.server";
 import { insertRow } from "@/lib/doorstep/persistence.server";
 import { CheckInRequestSchema } from "@/lib/doorstep/schemas";
@@ -27,7 +28,11 @@ export const Route = createFileRoute("/api/checkin")({
               ? checkInTemplate(r, 1)
               : (await draftCheckIn(r.language, stage === 1 ? 1 : 0, r.shortName)).message;
         const idempotencyKey = `${residentId}:stage-${stage}:${channel}`;
-        const delivery = await messagingProvider().send({
+        const isPhotonDemo = photonDemoResidentId() === residentId;
+        const provider = isPhotonDemo ? createPhotonProvider() : null;
+        if (isPhotonDemo && !provider)
+          return json({ error: "Photon is not configured for the demo recipient" }, 503);
+        const delivery = await (provider ?? messagingProvider()).send({
           residentId,
           channel,
           text,
