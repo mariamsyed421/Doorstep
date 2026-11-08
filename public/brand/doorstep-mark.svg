@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="10 2 220 218" fill="none">
+  <!-- Doorstep bear, a scalable interpretation of the supplied mascot reference. -->
+  <g fill="#CB8D5A">
+    <ellipse cx="51" cy="43" rx="33" ry="35" transform="rotate(-22 51 43)"/>
+    <ellipse cx="190" cy="43" rx="33" ry="35" transform="rotate(22 190 43)"/>
+  </g>
+  <g fill="#FFD7B6">
+    <ellipse cx="52" cy="46" rx="18" ry="21" transform="rotate(-22 52 46)"/>
+    <ellipse cx="189" cy="46" rx="18" ry="21" transform="rotate(22 189 46)"/>
+  </g>
+  <path fill="#CB8D5A" d="M28 101C28 58 64 17 120 17S212 58 212 101C212 146 177 170 120 170S28 146 28 101Z"/>
+  <g fill="#4E2813">
+    <ellipse cx="83" cy="103" rx="10" ry="15"/>
+    <ellipse cx="157" cy="103" rx="10" ry="15"/>
+  </g>
+  <ellipse cx="120" cy="122" rx="30" ry="24" fill="#FFD7B6"/>
+  <path fill="#4E2813" d="M109 109C113 105 127 105 131 109C134 113 124 121 120 121S106 113 109 109Z"/>
+  <path d="M110 127Q120 139 130 127" fill="none" stroke="#4E2813" stroke-width="3" stroke-linecap="round"/><path fill="#D5111D" d="M175 156C184 143 197 144 204 149C204 158 190 163 180 161C195 168 200 177 193 178C183 180 176 174 173 164Z"/>
+  <path fill="#ED1D24" d="M62 157C93 171 149 176 175 157C178 174 157 190 127 211C123 214 119 216 114 212C90 197 59 177 59 165C59 162 60 159 62 157Z"/>
+  <ellipse cx="174" cy="160" rx="5" ry="7" fill="#ED1D24"/>
+  <g fill="none" stroke="#FFF" stroke-width="1.6">
+    <ellipse cx="120" cy="182" rx="7.5" ry="5.2"/>
+    <ellipse cx="112" cy="193" rx="7.5" ry="5.2"/>
+    <ellipse cx="128" cy="193" rx="7.5" ry="5.2"/>
+  </g>
+</svg>
