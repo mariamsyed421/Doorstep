@@ -2,13 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   RESIDENTS,
   DISTRICTS,
+  CITY_TOTAL,
   urgency,
   groupFor,
   districtCount,
-  markerState,
   accountedFor,
 } from "@/lib/doorstep-data";
-describe("Response priorities", () => {
+
+describe("Synthetic residents and districts", () => {
   it("uses the brief's neighborhood urgency thresholds", () => {
     expect([0, 1, 3, 4, 8, 9].map(urgency)).toEqual([
       "quiet",
@@ -19,33 +20,36 @@ describe("Response priorities", () => {
       "red",
     ]);
   });
-  it("has 30 households and 12,000 residents across 9 districts", () => {
-    expect(RESIDENTS).toHaveLength(30);
+  it("has 40 synthetic households with unique ids and 12,000 residents across 9 districts", () => {
+    expect(RESIDENTS).toHaveLength(40);
+    expect(new Set(RESIDENTS.map((r) => r.id)).size).toBe(40);
     expect(DISTRICTS).toHaveLength(9);
-    expect(DISTRICTS.reduce((n, d) => n + d.totalResidents, 0)).toBe(12000);
+    expect(CITY_TOTAL).toBe(12000);
   });
-  it("prioritizes silent home residents and calls contacts for away residents", () => {
-    const lopez = RESIDENTS.find((r) => r.id === "412");
-    const tran = RESIDENTS.find((r) => r.id === "427");
+  it("uses only synthetic 555-01xx phone numbers", () => {
+    for (const r of RESIDENTS) expect(r.profile.phone).toMatch(/^555-01\d{2}$/);
+  });
+  it("derives declared functional needs from the preparedness profile", () => {
+    const omar = RESIDENTS.find((r) => r.id === "406");
+    const elena = RESIDENTS.find((r) => r.id === "412");
     const walsh = RESIDENTS.find((r) => r.id === "433");
-    if (!lopez || !tran || !walsh) throw Error("Missing demo people");
-    expect(groupFor(lopez)).toBe("check");
-    expect(groupFor(tran)).toBe("call");
-    expect(groupFor(walsh)).toBe("unknown");
-    expect(markerState(tran, {})).toBe("away");
+    expect(omar?.profile.needs.powerDependentEquipment).toBe("Home oxygen concentrator");
+    expect(omar?.profile.needs.criticalMedical).toBe(true);
+    expect(elena?.profile.needs.mobility).toBe(true);
+    expect(walsh?.profile.consent.contactEmergencyContact).toBe(false);
   });
-  it("a safe neighbor reply removes danger and increments the live counter", () => {
-    const r = RESIDENTS.find((r) => r.id === "412");
-    const elm = DISTRICTS.find((d) => d.id === "elm");
-    if (!r || !elm) throw Error("Missing Elm demo");
-    expect(districtCount(elm, {})).toBe(3);
-    expect(markerState(r, {})).toBe("danger");
-    expect(markerState(r, { "412": "safe" })).toBe("safe");
-    expect(districtCount(elm, { "412": "safe" })).toBe(2);
-    expect(accountedFor({})).toBe(11968);
-    expect(accountedFor({ "412": "safe" })).toBe(11969);
+  it("groups residents by plan", () => {
+    const by = (id: string) => RESIDENTS.find((r) => r.id === id)!;
+    expect(groupFor(by("412"))).toBe("check");
+    expect(groupFor(by("427"))).toBe("call");
+    expect(groupFor(by("433"))).toBe("unknown");
   });
-  it("dispatching a welfare check does not falsely count a person safe", () => {
-    expect(accountedFor({ "433": "helpOnWay" })).toBe(11968);
+  it("counts Elm live and other districts from static demo data", () => {
+    const elm = DISTRICTS.find((d) => d.id === "elm")!;
+    const canyon = DISTRICTS.find((d) => d.id === "canyon")!;
+    expect(districtCount(elm, 7)).toBe(7);
+    expect(districtCount(canyon, 7)).toBe(8);
+    expect(accountedFor(0) + 32).toBe(12000);
+    expect(accountedFor(5)).toBe(accountedFor(0) - 5);
   });
 });

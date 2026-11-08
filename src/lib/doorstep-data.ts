@@ -1,5 +1,39 @@
 export type PlanAnswer = "home" | "family" | "shelter" | null;
 export type CheckIn = "safe" | "needsHelp" | "silent";
+export type Language = "English" | "Spanish" | "Vietnamese" | "Arabic" | "Mandarin";
+export type Channel = "sms" | "voice";
+
+/**
+ * Synthetic, opt-in preparedness profile modeled on the *kinds* of information a registry
+ * like Texas STEAR collects. These are demo records only; Doorstep has no access to real
+ * STEAR data.
+ */
+export interface PreparednessProfile {
+  householdSize: number;
+  contactChannels: Channel[];
+  /** Synthetic 555-01xx numbers only — never real phone numbers. */
+  phone: string;
+  needs: {
+    powerDependentEquipment: string | null;
+    criticalMedical: boolean;
+    mobility: boolean;
+    transportation: boolean;
+    accessibleShelter: boolean;
+    pets: boolean;
+  };
+  consent: {
+    automatedMessages: boolean;
+    voiceCalls: boolean;
+    contactEmergencyContact: boolean;
+    neighborCheck: boolean;
+    shareWithResponders: boolean;
+  };
+  /** Voluntarily provided. Never used for priority scoring. */
+  insurance: { carrier: string; documentsReady: boolean } | null;
+  /** Neighborhood network health in the synthetic scenario. */
+  commsZone: "normal" | "degraded";
+  notes: string | null;
+}
 
 export interface Resident {
   id: string;
@@ -7,7 +41,7 @@ export interface Resident {
   shortName: string;
   address: string;
   age: number;
-  language: "English" | "Spanish" | "Vietnamese" | "Arabic";
+  language: Language;
   livesAlone: boolean;
   medicalNeed: string | null;
   planAnswer: PlanAnswer;
@@ -20,12 +54,57 @@ export interface Resident {
   lat: number;
   lng: number;
   planQuote: string;
+  profile: PreparednessProfile;
 }
 
-type ResidentInput = Omit<Resident, "id" | "lat" | "lng" | "planQuote" | "neighbor"> & {
+type ResidentInput = Omit<Resident, "id" | "lat" | "lng" | "planQuote" | "neighbor" | "profile"> & {
   neighbor: { name: string; address: string };
   planQuote?: string;
+  profile?: Partial<Omit<PreparednessProfile, "needs" | "consent">> & {
+    needs?: Partial<PreparednessProfile["needs"]>;
+    consent?: Partial<PreparednessProfile["consent"]>;
+  };
 };
+/** Derive declared functional needs from the free-text medical note, then apply overrides. */
+function profileFor(x: ResidentInput): PreparednessProfile {
+  const m = (x.medicalNeed ?? "").toLowerCase();
+  const n = Number(x.address.split(" ")[0]);
+  const base: PreparednessProfile = {
+    householdSize: x.livesAlone ? 1 : 2 + (n % 3),
+    contactChannels: ["sms", "voice"],
+    phone: `555-01${String(n % 100).padStart(2, "0")}`,
+    needs: {
+      powerDependentEquipment: m.includes("oxygen")
+        ? "Home oxygen concentrator"
+        : m.includes("fridge")
+          ? "Insulin refrigeration"
+          : null,
+      criticalMedical: /oxygen|insulin|heart/.test(m),
+      mobility: /walker|mobility|wheelchair/.test(m),
+      transportation: false,
+      accessibleShelter: /walker|wheelchair/.test(m),
+      pets: n % 5 === 0,
+    },
+    consent: {
+      automatedMessages: true,
+      voiceCalls: true,
+      contactEmergencyContact: x.emergencyContact.relation !== "none on file",
+      neighborCheck: true,
+      shareWithResponders: true,
+    },
+    insurance:
+      n % 4 === 1 ? { carrier: "Self-reported homeowner policy", documentsReady: false } : null,
+    commsZone: "normal",
+    notes: null,
+  };
+  const o = x.profile ?? {};
+  return {
+    ...base,
+    ...o,
+    needs: { ...base.needs, ...o.needs },
+    consent: { ...base.consent, ...o.consent },
+  };
+}
 const location = (address: string): { lat: number; lng: number } => {
   const n = Number(address.split(" ")[0]);
   return { lat: 32.9539 + (n % 2 === 0 ? 0.00065 : -0.00065), lng: -96.739 + (n - 400) * 0.00013 };
@@ -35,6 +114,7 @@ const r = (x: ResidentInput): Resident => ({
   id: x.address.split(" ")[0] ?? x.address,
   ...location(x.address),
   neighbor: { ...x.neighbor, ...location(x.neighbor.address) },
+  profile: profileFor(x),
   planQuote:
     x.planQuote ??
     (x.name.startsWith("Elena")
@@ -396,6 +476,157 @@ export const RESIDENTS: Resident[] = [
       row: "north",
     }),
   ),
+  // South side, 439–457: scenario households added for the Signal Fusion demo.
+  r({
+    name: "Wei Zhang",
+    shortName: "Mr. Zhang",
+    address: "439 Elm St",
+    age: 23,
+    language: "Mandarin",
+    livesAlone: true,
+    medicalNeed: null,
+    planAnswer: "home",
+    planDetail: null,
+    checkInStatus: "needsHelp",
+    silentHours: 0,
+    emergencyContact: { name: "Li", relation: "mother (overseas)" },
+    neighbor: { name: "Duc Le", address: "437 Elm St" },
+    row: "south",
+    planQuote: "I'm new here. I'll stay in my apartment I think.",
+    profile: {
+      notes: "International student, first storm season in Texas",
+      consent: { voiceCalls: false },
+    },
+  }),
+  r({
+    name: "Dolores Medina",
+    shortName: "Sra. Medina",
+    address: "441 Elm St",
+    age: 61,
+    language: "Spanish",
+    livesAlone: true,
+    medicalNeed: null,
+    planAnswer: "home",
+    planDetail: null,
+    checkInStatus: "needsHelp",
+    silentHours: 0,
+    emergencyContact: { name: "Rafael", relation: "son" },
+    neighbor: { name: "Wei Zhang", address: "439 Elm St" },
+    row: "south",
+    planQuote: "Me quedo en casa. No tengo carro.",
+    profile: { needs: { transportation: true } },
+  }),
+  r({
+    name: "Raymond Hughes",
+    shortName: "Mr. Hughes",
+    address: "443 Elm St",
+    age: 57,
+    language: "English",
+    livesAlone: false,
+    medicalNeed: "Wheelchair user",
+    planAnswer: "home",
+    planDetail: null,
+    checkInStatus: "needsHelp",
+    silentHours: 0,
+    emergencyContact: { name: "Denise", relation: "wife" },
+    neighbor: { name: "Dolores Medina", address: "441 Elm St" },
+    row: "south",
+    planQuote: "Staying home unless the ramp floods.",
+  }),
+  r({
+    name: "Karen Mitchell",
+    shortName: "Ms. Mitchell",
+    address: "445 Elm St",
+    age: 49,
+    language: "English",
+    livesAlone: false,
+    medicalNeed: null,
+    planAnswer: "home",
+    planDetail: null,
+    checkInStatus: "safe",
+    silentHours: 0,
+    emergencyContact: { name: "Greg", relation: "husband" },
+    neighbor: { name: "Raymond Hughes", address: "443 Elm St" },
+    row: "south",
+    profile: { insurance: { carrier: "Self-reported homeowner policy", documentsReady: false } },
+  }),
+  r({
+    name: "Joe Patterson",
+    shortName: "Mr. Patterson",
+    address: "447 Elm St",
+    age: 66,
+    language: "English",
+    livesAlone: true,
+    medicalNeed: null,
+    planAnswer: "family",
+    planDetail: "Left Friday for sister's in Waco",
+    checkInStatus: "silent",
+    silentHours: 3,
+    emergencyContact: { name: "Ruth", relation: "sister" },
+    neighbor: { name: "Karen Mitchell", address: "445 Elm St" },
+    row: "south",
+  }),
+  r({
+    name: "Maria Johnson",
+    shortName: "Ms. Johnson",
+    address: "449 Elm St",
+    age: 52,
+    language: "English",
+    livesAlone: false,
+    medicalNeed: "CPAP machine",
+    planAnswer: "home",
+    planDetail: null,
+    checkInStatus: "silent",
+    silentHours: 3,
+    emergencyContact: { name: "Andre", relation: "brother" },
+    neighbor: { name: "Karen Mitchell", address: "445 Elm St" },
+    row: "south",
+    profile: {
+      needs: { powerDependentEquipment: "CPAP machine" },
+      commsZone: "degraded",
+    },
+  }),
+  ...(
+    [
+      ["Tom Becker", "451", "English"],
+      ["Aisha Bello", "453", "English"],
+      ["Luis Romero", "455", "Spanish"],
+    ] as const
+  ).map(([name, n, language]) =>
+    r({
+      name,
+      shortName: name.split(" ")[0] ?? name,
+      address: `${n} Elm St`,
+      age: 40 + (Number(n) % 20),
+      language,
+      livesAlone: n === "453",
+      medicalNeed: null,
+      planAnswer: "home",
+      planDetail: null,
+      checkInStatus: "silent",
+      silentHours: 3,
+      emergencyContact: { name: "Sam", relation: "friend" },
+      neighbor: { name: "Karen Mitchell", address: "445 Elm St" },
+      row: "south",
+      profile: { commsZone: "degraded" },
+    }),
+  ),
+  r({
+    name: "Yusuf Karim",
+    shortName: "Mr. Karim",
+    address: "457 Elm St",
+    age: 36,
+    language: "Arabic",
+    livesAlone: false,
+    medicalNeed: null,
+    planAnswer: "home",
+    planDetail: null,
+    checkInStatus: "safe",
+    silentHours: 0,
+    emergencyContact: { name: "Huda", relation: "wife" },
+    neighbor: { name: "Luis Romero", address: "455 Elm St" },
+    row: "south",
+  }),
 ];
 
 export const STAGES = ["Before storm", "Storm hits", "2 hours after", "6 hours after"] as const;
@@ -466,34 +697,16 @@ export const DISTRICTS: District[] = [
 export function urgency(count: number): "quiet" | "amber" | "orange" | "red" {
   return count === 0 ? "quiet" : count <= 3 ? "amber" : count <= 8 ? "orange" : "red";
 }
-export function districtCount(d: District, resolved: Resolutions) {
-  return d.id === "elm"
-    ? RESIDENTS.filter(
-        (r) => r.planAnswer === "home" && (resolved[r.id] ?? r.checkInStatus) === "silent",
-      ).length
-    : d.silentAtHome;
+/** Unconfirmed households per district. Elm is live (from the simulation); others are static demo counts. */
+export function districtCount(d: District, elmUnconfirmed: number) {
+  return d.id === "elm" ? elmUnconfirmed : d.silentAtHome;
 }
-export function accountedFor(resolved: Resolutions) {
-  return (
-    11968 +
-    RESIDENTS.filter(
-      (r) =>
-        r.checkInStatus === "silent" &&
-        resolved[r.id] &&
-        resolved[r.id] !== "silent" &&
-        resolved[r.id] !== "helpOnWay",
-    ).length
-  );
-}
-export function markerState(r: Resident, resolved: Resolutions) {
-  const status = resolved[r.id] ?? r.checkInStatus;
-  if (status === "needsHelp" || status === "helpOnWay") return "help";
-  if (r.planAnswer === null) return status === "safe" ? "safe" : "unknown";
-  if (r.planAnswer !== "home") return "away";
-  return status === "safe" ? "safe" : "danger";
-}
-
-/** Urgency score: lives alone, age, language barrier, and hours silent. */
-export function urgencyScore(r: Resident) {
-  return (r.livesAlone ? 3 : 0) + (r.age >= 70 ? 3 : 0) + (r.language !== "English" ? 2 : 0) + Math.min(r.silentHours, 4);
+/** Residents outside the modeled Elm households assumed reached; Elm comes from the live simulation. */
+export const CITY_TOTAL = DISTRICTS.reduce((n, d) => n + d.totalResidents, 0);
+export const OTHER_DISTRICTS_UNCONFIRMED = DISTRICTS.filter((d) => d.id !== "elm").reduce(
+  (n, d) => n + d.silentAtHome,
+  0,
+);
+export function accountedFor(elmUnconfirmed: number) {
+  return CITY_TOTAL - OTHER_DISTRICTS_UNCONFIRMED - elmUnconfirmed;
 }

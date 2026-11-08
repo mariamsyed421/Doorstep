@@ -14,19 +14,20 @@ import L from "leaflet";
 import { setWorkerUrl } from "maplibre-gl";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import { maplibreGL } from "@maplibre/maplibre-gl-leaflet";
-import {
-  DISTRICTS,
-  RESIDENTS,
-  districtCount,
-  urgency,
-  markerState,
-  type Resolutions,
-  type Resident,
-} from "@/lib/doorstep-data";
+import { DISTRICTS, RESIDENTS, districtCount, urgency } from "@/lib/doorstep-data";
+import type { MarkerState } from "@/lib/doorstep/simulation";
+import type { Assessment } from "@/lib/doorstep/scoring";
+import type { OutageEvent } from "@/lib/doorstep/outages";
 setWorkerUrl(workerUrl);
 interface Props {
   district: string | null;
-  resolved: Resolutions;
+  markers: Record<string, MarkerState>;
+  assessments: Record<string, Assessment>;
+  outages: OutageEvent[];
+  elmUnconfirmed: number;
+  /** Priority filter from the queue: only these residents get markers. */
+  visible: Set<string>;
+  heatmap: boolean;
   selected: string | null;
   walking: string | null;
   onDistrict: (id: string | null) => void;
@@ -46,6 +47,17 @@ function BaseMap() {
       map.removeLayer(layer);
     };
   }, [map]);
+  return null;
+}
+/** Queue → map sync: fly to the selected household at street zoom. */
+function FocusSelected({ selected, district }: Pick<Props, "selected" | "district">) {
+  const map = useMap();
+  useEffect(() => {
+    const r = RESIDENTS.find((x) => x.id === selected);
+    if (!r || district !== "elm") return;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    map.flyTo([r.lat, r.lng], Math.max(map.getZoom(), 18.5), { duration: reduce ? 0 : 0.8 });
+  }, [selected, district, map]);
   return null;
 }
 function Controller({ district, onDistrict }: Pick<Props, "district" | "onDistrict">) {
@@ -112,10 +124,9 @@ function Controller({ district, onDistrict }: Pick<Props, "district" | "onDistri
     </div>
   );
 }
-function dot(r: Resident, resolved: Resolutions) {
-  const state = markerState(r, resolved);
+function dot(state: MarkerState, selected: boolean) {
   return L.divIcon({
-    className: "household-marker",
+    className: `household-marker${selected ? " is-selected" : ""}`,
     html: `<span class="porch-dot ${state}">${state === "unknown" ? "?" : state === "away" ? "↗" : ""}</span>`,
     iconSize: [36, 36],
     iconAnchor: [18, 18],
@@ -134,9 +145,53 @@ export default function ResponseMap(props: Props) {
     >
       <BaseMap />
       <Controller district={props.district} onDistrict={props.onDistrict} />
+      <FocusSelected selected={props.selected} district={props.district} />
+      {props.outages
+        .filter((o) => o.active)
+        .map((o) => (
+          <Circle
+            key={o.id}
+            center={[o.center.lat, o.center.lng]}
+            radius={o.radiusMeters}
+            pathOptions={{
+              className: `outage-zone outage-${o.type}`,
+              weight: 1.5,
+              dashArray: "6 6",
+            }}
+          >
+            <Tooltip sticky>
+              <strong>{o.label}</strong>
+              <br />
+              SIMULATED · {o.source}
+              <br />~{o.estimatedHouseholds} households · {o.severity} · confidence{" "}
+              {Math.round(o.confidence * 100)}%
+            </Tooltip>
+          </Circle>
+        ))}
+      {props.heatmap &&
+        props.district === "elm" &&
+        RESIDENTS.filter((r) =>
+          ["danger", "awaiting", "unknown", "away"].includes(props.markers[r.id] ?? ""),
+        ).map((r) => {
+          const a = props.assessments[r.id];
+          const w = Math.min(1, (a?.score ?? 0) / 20);
+          return (
+            <Circle
+              key={`heat-${r.id}`}
+              center={[r.lat, r.lng]}
+              radius={22 + w * 30}
+              interactive={false}
+              pathOptions={{
+                className: "silence-heat",
+                stroke: false,
+                fillOpacity: 0.12 + w * 0.3,
+              }}
+            />
+          );
+        })}
       {(!props.district || props.district !== "elm") &&
         DISTRICTS.map((d) => {
-          const count = districtCount(d, props.resolved);
+          const count = districtCount(d, props.elmUnconfirmed);
           const tone = urgency(count);
           const bounds = L.polygon(d.polygon).getBounds();
           const center = bounds.getCenter();
@@ -182,11 +237,11 @@ export default function ResponseMap(props: Props) {
           );
         })}
       {props.district === "elm" &&
-        RESIDENTS.map((r) => (
+        RESIDENTS.filter((r) => props.visible.has(r.id)).map((r) => (
           <Marker
-            key={`${r.id}-${markerState(r, props.resolved)}`}
+            key={`${r.id}-${props.markers[r.id]}-${props.selected === r.id}`}
             position={[r.lat, r.lng]}
-            icon={dot(r, props.resolved)}
+            icon={dot(props.markers[r.id] ?? "unknown", props.selected === r.id)}
             alt={`${r.name}, ${r.address}`}
             keyboard
             eventHandlers={{ click: () => props.onSelect(r.id) }}
@@ -200,6 +255,13 @@ export default function ResponseMap(props: Props) {
               <strong>
                 {r.shortName} · {r.address}
               </strong>
+              {props.assessments[r.id] && (
+                <>
+                  <br />
+                  Score {props.assessments[r.id]?.score} ·{" "}
+                  {props.assessments[r.id]?.level.toUpperCase()}
+                </>
+              )}
               <br />“{r.planQuote}”
             </Tooltip>
           </Marker>
@@ -221,7 +283,7 @@ export default function ResponseMap(props: Props) {
               iconSize: [30, 30],
             })}
           >
-            <Tooltip permanent>Maria is on her way</Tooltip>
+            <Tooltip permanent>{r.neighbor.name.split(" ")[0]} is on the way</Tooltip>
           </Marker>
         </>
       )}

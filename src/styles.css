@@ -195,8 +195,30 @@
   font-size: 12px;
 }
 .porch-dot.safe {
+  background: var(--safe);
+  box-shadow: 0 0 9px 4px color-mix(in oklab, var(--safe) 35%, transparent);
+}
+.porch-dot.awaiting {
   background: var(--light);
-  box-shadow: 0 0 9px 4px color-mix(in oklab, var(--light) 35%, transparent);
+  box-shadow: 0 0 6px 2px color-mix(in oklab, var(--light) 30%, transparent);
+}
+.household-marker.is-selected .porch-dot {
+  outline: 3px solid var(--foreground);
+  outline-offset: 3px;
+}
+.outage-zone.outage-power {
+  fill: var(--alert);
+  stroke: var(--alert);
+  fill-opacity: 0.1;
+}
+.outage-zone.outage-communications {
+  fill: var(--unknown);
+  stroke: var(--foreground);
+  fill-opacity: 0.06;
+}
+.silence-heat {
+  fill: var(--danger);
+  pointer-events: none;
 }
 .porch-dot.help {
   background: var(--alert);
@@ -254,6 +276,7 @@
   color: var(--muted-foreground);
 }
 .resident-tooltip {
+  width: max-content;
   max-width: 270px;
   white-space: normal;
 }

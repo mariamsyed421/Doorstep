@@ -12,13 +12,26 @@ interface Props {
   intensity?: number;
   delay: number;
   tag?: string | null;
-  state?: "safe" | "help" | "danger" | "away" | "unknown";
+  state?: "safe" | "help" | "danger" | "awaiting" | "away" | "unknown";
   selected: boolean;
   onClick: () => void;
 }
 
-export function House({ resident, planShown, porch, urgent, intensity = 1, delay, tag, state, selected, onClick }: Props) {
-  const away = state ? state === "away" : planShown && (resident.planAnswer === "family" || resident.planAnswer === "shelter");
+export function House({
+  resident,
+  planShown,
+  porch,
+  urgent,
+  intensity = 1,
+  delay,
+  tag,
+  state,
+  selected,
+  onClick,
+}: Props) {
+  const away = state
+    ? state === "away"
+    : planShown && (resident.planAnswer === "family" || resident.planAnswer === "shelter");
   const lit = state ? state === "safe" : planShown && resident.planAnswer === "home";
   const unknown = state ? state === "unknown" : planShown && resident.planAnswer === null;
   const ts = { transitionDelay: `${delay}ms` };
@@ -42,7 +55,12 @@ export function House({ resident, planShown, porch, urgent, intensity = 1, delay
       )}
       <svg
         viewBox="0 0 120 110"
-        className={cn("house w-full max-w-28 transition-opacity duration-700", lit && "lit", porch === "safe" && "porch-safe", porch === "help" && "porch-help")}
+        className={cn(
+          "house w-full max-w-28 transition-opacity duration-700",
+          lit && "lit",
+          porch === "safe" && "porch-safe",
+          porch === "help" && "porch-help",
+        )}
         style={{ ...ts, opacity: away ? 0.4 : 1 }}
       >
         <polygon className="roof" points="8,50 60,10 112,50" />
@@ -62,6 +80,7 @@ export function House({ resident, planShown, porch, urgent, intensity = 1, delay
           tag ? "opacity-100 text-muted-foreground" : "opacity-0",
           state === "help" && "font-semibold text-alert",
           state === "danger" && "font-semibold text-danger",
+          state === "awaiting" && "font-semibold text-light",
           state === "away" && "text-[11px] italic",
         )}
         title={tag ?? undefined}
