@@ -26,7 +26,12 @@ import {
   OTHER_DISTRICTS_UNCONFIRMED,
   districtCount,
   accountedFor,
-  urgency,
+  unconfirmed,
+  COUNTIES_BY_PRIORITY,
+  COUNTY_BY_GEOID,
+  DEMO_COUNTY,
+  TEXAS_TOTALS,
+  countySilentAtHome,
   type Resident,
 } from "@/lib/doorstep-data";
 import {
@@ -78,6 +83,7 @@ const DEMO_CAPTIONS: [number, string][] = [
 export function Dashboard() {
   const [sim, dispatch] = useReducer(simReducer, undefined, () => seededState());
   const [district, setDistrict] = useState<string | null>(null);
+  const [county, setCounty] = useState<string | null>(null);
   const [streetView, setStreetView] = useState(true);
   const [heatmap, setHeatmap] = useState(true);
   const [selected, setSelected] = useState<string | null>(null);
@@ -145,71 +151,26 @@ export function Dashboard() {
   const person = RESIDENTS.find((r) => r.id === selected);
   const phonePerson = RESIDENTS.find((r) => r.id === phone);
   const ranked = [...DISTRICTS].sort(
-    (a, b) => districtCount(b, elmUnconfirmed) - districtCount(a, elmUnconfirmed),
+    (a, b) => districtCount(b, resolved) - districtCount(a, resolved),
   );
-
-  // ---------- Simulation clock ----------
-  useEffect(() => {
-    if (!sim.running) return;
-    const tickMs = 250;
-    const id = setInterval(() => {
-      acc.current += (60 / sim.secondsPerSimHour) * (tickMs / 1000);
-      const whole = Math.floor(acc.current);
-      if (whole > 0) {
-        acc.current -= whole;
-        dispatch({ type: "advance", minutes: whole });
-      }
-    }, tickMs);
-    return () => clearInterval(id);
-  }, [sim.running, sim.secondsPerSimHour]);
-
-  // ---------- Backend wiring ----------
-  useEffect(() => {
-    void health().then(setIntegrations);
-    void loadShelters().then(setShelters);
-  }, []);
-  const aiConfigured = Boolean(integrations?.nemotron || integrations?.gemini);
-  // Upgrade rules-based classifications with Nemotron / Gemini when configured.
-  useEffect(() => {
-    for (const id of sim.enrich) {
-      if (enriching.current.has(id)) continue;
-      enriching.current.add(id);
-      const m = sim.messages.find((x) => x.id === id);
-      if (!m || !aiConfigured) {
-        dispatch({ type: "enrich_done", messageId: id });
-        continue;
-      }
-      void classify(m.text, m.residentId).then((c) =>
-        dispatch(
-          c.provider === "rules"
-            ? { type: "enrich_done", messageId: id }
-            : { type: "enriched", messageId: id, classification: c },
-        ),
-      );
-    }
-  }, [sim.enrich, sim.messages, aiConfigured]);
-  // Inbound replies persisted by /api/webhook (Supabase configured only).
-  useEffect(() => {
-    if (!integrations?.supabase) return;
-    const seen = new Set<string>();
-    let since = new Date().toISOString();
-    const id = setInterval(async () => {
-      for (const row of await inbox(since)) {
-        if (seen.has(row.id)) continue;
-        seen.add(row.id);
-        since = row.created_at;
-        const parsed = ClassificationResultSchema.safeParse(row.classification);
-        dispatch({
-          type: "reply",
-          residentId: row.resident_id,
-          text: row.reply,
-          ...(parsed.success ? { classification: parsed.data } : {}),
-        });
-      }
-    }, 5000);
-    return () => clearInterval(id);
-  }, [integrations?.supabase]);
-
+  const resolvedHome = RESIDENTS.filter(
+    (r) =>
+      r.planAnswer === "home" &&
+      r.checkInStatus === "silent" &&
+      resolved[r.id] &&
+      resolved[r.id] !== "silent",
+  ).length;
+  const activeCounty = county ? COUNTY_BY_GEOID.get(county) : undefined;
+  const topCounties = COUNTIES_BY_PRIORITY.slice(0, 12);
+  const funnel = activeCounty ?? TEXAS_TOTALS;
+  // Elm Street confirmations only change the Dallas County and statewide figures.
+  const funnelResolved = !activeCounty || activeCounty.geoid === DEMO_COUNTY ? resolvedHome : 0;
+  const knockFirst = Math.max(0, funnel.liveAloneSilent - funnelResolved);
+  function backToTexas() {
+    setDistrict(null);
+    setCounty(null);
+    setSelected(null);
+  }
   function later(ms: number, fn: () => void) {
     timers.current.push(setTimeout(fn, ms));
   }
@@ -341,8 +302,8 @@ export function Dashboard() {
     setDemo(true);
     setDemoStep(1);
     setDistrict(null);
-    setFilter("all");
-    setSearch("");
+    setCounty(null);
+    setResolved({});
     setReplies({});
     setNoAnswer({});
     setPending({});
@@ -371,23 +332,37 @@ export function Dashboard() {
       setDemoStep(6);
       setDemoCaption("Event 9 · Coordinator approves a neighbor check for Mrs. Lopez");
       setSelected("412");
-      later(1500, () => {
-        const r = RESIDENTS.find((x) => x.id === "412");
-        if (r) approveAction(r, 4);
-      });
-      later(4500, () => {
-        answer("412", "okay");
-        setDemoCaption("Neighbor confirmed Mrs. Lopez is safe · silence escalation stopped");
-      });
-      later(8000, () => {
-        setDemo(false);
-        setDemoStep(0);
-        setDemoCaption("");
-        setPhone(null);
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [demo, demoStep, sim.now]);
+      setDemoPhase(3);
+    });
+    later(6500, () => {
+      const r = RESIDENTS.find((r) => r.id === "412");
+      if (r) act(r);
+      setDemoPhase(4);
+    });
+    later(9500, () => {
+      answer("412", "okay");
+      setDemoPhase(5);
+    });
+    later(11500, () => {
+      // The city-wide response team confirms the other high-priority homes in parallel.
+      setResolved((x) => ({
+        ...x,
+        "438": "safe",
+        "452": "safe",
+      }));
+      setPhone(null);
+      setWalking(null);
+      setSelected(null);
+      setDistrict(null);
+      setCounty(null);
+      setDemoPhase(6);
+      ["438", "452"].forEach((id) => addLog(id, "Responder team confirmed safe", "5:16pm"));
+    });
+    later(14000, () => {
+      setDemo(false);
+      setDemoPhase(0);
+    });
+  }
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
   const hoursAgo = Math.max(0, sim.now);
@@ -421,7 +396,7 @@ export function Dashboard() {
           </div>
         </div>
         <div className="header-context">
-          <span className="text-sm font-medium">Richardson operations</span>
+          <span className="text-sm font-medium">Texas operations</span>
           <span className="text-xs text-muted-foreground">State Farm</span>
         </div>
         <div className="header-actions flex items-center gap-3 md:gap-5">
@@ -445,26 +420,20 @@ export function Dashboard() {
       <div className="incident-summary">
         <div className="incident-heading">
           <p className="section-kicker">
-            Storm response <span className="text-border">/</span> North Texas
+            Storm response <span className="text-border">/</span> Statewide
           </p>
           <h2 className="mt-2 font-display text-[28px] font-semibold leading-tight tracking-tight md:text-[32px]">
-            Richardson, Texas
+            Texas
           </h2>
           <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-            {sim.incident.type} · {sim.incident.startedLabel} ·{" "}
-            {active
-              ? `${Math.floor(hoursAgo / 60)}h ${hoursAgo % 60}m ago`
-              : "incident not yet opened"}{" "}
-            · {sim.incident.id}
+            Squall line from Wichita Falls through Dallas to Tyler · Saturday, November 7 · 3 hours
+            ago · {TEXAS_TOTALS.outages.toLocaleString()} without power
           </p>
-          <div className="mt-3">
-            <SimControls sim={sim} dispatch={dispatch} disabled={demo} />
-          </div>
         </div>
         <IncidentGuide
-          priorityCount={reviewNow.length}
-          unconfirmed={unconfirmedTotal}
-          pendingCount={Object.keys(pending).length}
+          priorityCount={priorityHomes.length}
+          unconfirmed={unconfirmed(resolved)}
+          pendingCount={silent.filter((r) => Boolean(pending[r.id])).length}
           nextHome={nextHome}
           demo={demo}
           onReview={() => {
@@ -477,15 +446,15 @@ export function Dashboard() {
         <div className="incident-totals" aria-live="polite">
           <div>
             <p className="incident-number">
-              {active ? accountedFor(elmUnconfirmed).toLocaleString() : "—"}
+              {accountedFor(resolved).toLocaleString()}
               <span className="ml-2 text-sm font-normal text-muted-foreground">
-                / {CITY_TOTAL.toLocaleString()}
+                / {TEXAS_TOTALS.enrolled.toLocaleString()}
               </span>
             </p>
             <p className="mt-1 text-xs text-muted-foreground">Residents accounted for</p>
           </div>
           <div className="incident-unconfirmed">
-            <p className="incident-number text-danger">{active ? unconfirmedTotal : "—"}</p>
+            <p className="incident-number text-danger">{unconfirmed(resolved).toLocaleString()}</p>
             <p className="mt-1 text-xs text-muted-foreground">Still unconfirmed</p>
           </div>
         </div>
@@ -496,12 +465,9 @@ export function Dashboard() {
             <Suspense fallback={<MapLoadingState />}>
               <ResponseMap
                 district={district}
-                markers={markers}
-                assessments={assessments}
-                outages={sim.outages}
-                elmUnconfirmed={elmUnconfirmed}
-                visible={visible}
-                heatmap={heatmap}
+                county={county}
+                onCounty={setCounty}
+                resolved={resolved}
                 selected={selected}
                 walking={walking}
                 onDistrict={setDistrict}
@@ -542,25 +508,26 @@ export function Dashboard() {
           <div className="map-float left-5 top-5 flex items-center gap-3 rounded-lg px-4 py-3">
             <MapPin className="size-4 text-primary" />
             <div>
-              <p className="text-sm font-semibold">{activeDistrict?.name ?? "Texas"}</p>
+              <p className="text-sm font-semibold">
+                {activeDistrict?.name ?? (activeCounty ? `${activeCounty.name} County` : "Texas")}
+              </p>
               <p className="text-[11px] text-muted-foreground">
                 {district === "elm"
                   ? `${RESIDENTS.length} households · Elm Street`
                   : district
                     ? `${activeDistrict?.totalResidents.toLocaleString()} residents`
-                    : "Richardson response · 9 neighborhoods"}
+                    : activeCounty
+                      ? `${activeCounty.enrolled.toLocaleString()} enrolled residents`
+                      : `254 counties · ${TEXAS_TOTALS.enrolled.toLocaleString()} enrolled`}
               </p>
             </div>
-            {district && (
+            {(district || county) && (
               <Button
                 variant="ghost"
                 size="icon"
                 title="Back to Texas"
                 aria-label="Back to Texas"
-                onClick={() => {
-                  setDistrict(null);
-                  setSelected(null);
-                }}
+                onClick={backToTexas}
               >
                 <ArrowLeft />
               </Button>
@@ -597,9 +564,7 @@ export function Dashboard() {
                     <span>Lower</span>
                     <span>Higher</span>
                   </div>
-                  <p className="mt-2 text-muted-foreground">
-                    Silent at home · Richardson demo data
-                  </p>
+                  <p className="mt-2 text-muted-foreground">Silent at home by county · mock data</p>
                 </div>
               )}
             </div>
@@ -615,12 +580,14 @@ export function Dashboard() {
           )}
           <span className="map-float right-5 top-5 hidden items-center gap-2 rounded-lg px-3 py-2 text-[11px] text-muted-foreground sm:flex">
             <Layers className="size-3.5" />
-            {district ? "Neighborhood view" : "Texas heatmap"}
+            {district ? "Neighborhood view" : county ? "County view" : "Texas heatmap"}
           </span>
         </section>
         <aside
           className="response-panel"
-          aria-label={district ? "Priority queue" : "City priorities"}
+          aria-label={
+            district ? "Where to look" : county ? "County priorities" : "Statewide priorities"
+          }
         >
           {!district ? (
             <>
@@ -630,11 +597,32 @@ export function Dashboard() {
                     01 <span className="text-border">/</span> Response overview
                   </p>
                   <h2 className="font-display text-[23px] font-semibold leading-tight tracking-tight">
-                    From city to doorstep
+                    {activeCounty ? `${activeCounty.name} County` : "From state to doorstep"}
                   </h2>
+                  {activeCounty && (
+                    <Button
+                      variant="link"
+                      className="mt-1 h-auto p-0 text-xs text-muted-foreground"
+                      onClick={backToTexas}
+                    >
+                      <ArrowLeft /> Back to Texas
+                    </Button>
+                  )}
                 </div>
                 <dl className="response-counts">
-                  {counts.map((item, index) => (
+                  {[
+                    { label: "Residents in the storm's path", value: funnel.enrolled },
+                    {
+                      label: "Replied safe",
+                      value: funnel.enrolled - funnel.silent + funnelResolved,
+                    },
+                    { label: "Silent after check-in", value: funnel.silent - funnelResolved },
+                    {
+                      label: "Said they'd be home",
+                      value: Math.max(0, funnel.silentAtHome - funnelResolved),
+                    },
+                    { label: "Home + vulnerable", value: knockFirst },
+                  ].map((item, index) => (
                     <div
                       key={item.label}
                       className={cn(
@@ -650,55 +638,91 @@ export function Dashboard() {
                 <p
                   className={cn(
                     "priority-note mt-5 flex items-start gap-2 text-xs leading-relaxed",
-                    reviewNow.length ? "text-danger" : "text-foreground",
+                    knockFirst ? "text-danger" : "text-foreground",
                   )}
                 >
-                  {reviewNow.length ? (
+                  {knockFirst ? (
                     <Footprints className="mt-0.5 size-4 shrink-0" />
                   ) : (
                     <Check className="mt-0.5 size-4 shrink-0" />
                   )}
-                  {reviewNow.length
-                    ? `${reviewNow.length} households need review first`
-                    : active
-                      ? "Priority reviews are complete"
-                      : "Waiting for the incident to open"}
+                  {knockFirst
+                    ? `${knockFirst.toLocaleString()} people need a knock first`
+                    : "Priority home checks are complete"}
+                </p>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {funnel.outages.toLocaleString()} customers without power
                 </p>
               </section>
-              <section className="p-6">
-                <p className="section-kicker mb-2">
-                  02 <span className="text-border">/</span> Neighborhood queue
-                </p>
-                <h2 className="font-display text-xl font-semibold tracking-tight">
-                  Send responders here first
-                </h2>
-                <p className="mb-5 mt-2 text-xs leading-relaxed text-muted-foreground">
-                  Ranked by unconfirmed households.
-                </p>
-                <div className="queue-column-heads flex justify-between border-b border-border pb-2 text-[11px] text-muted-foreground">
-                  <span>Neighborhood</span>
-                  <span>Unconfirmed</span>
-                </div>
-                <div>
-                  {ranked.map((d, i) => (
-                    <Button
-                      key={d.id}
-                      variant="ghost"
-                      onClick={() => setDistrict(d.id)}
-                      className="district-row h-auto min-h-14 w-full justify-start gap-3 rounded-none px-0 py-4"
-                    >
-                      <span className="w-5 font-mono text-[11px] text-muted-foreground">
-                        {String(i + 1).padStart(2, "0")}
-                      </span>
-                      <span className="flex-1 text-left text-sm">{d.name}</span>
-                      <span className="text-base font-semibold tabular-nums text-foreground">
-                        {districtCount(d, elmUnconfirmed)}
-                      </span>
-                      <ChevronRight className="text-muted-foreground" />
-                    </Button>
-                  ))}
-                </div>
-              </section>
+              {!activeCounty || activeCounty.geoid === DEMO_COUNTY ? (
+                <section className="p-6">
+                  <p className="section-kicker mb-2">
+                    02 <span className="text-border">/</span>{" "}
+                    {activeCounty ? "Neighborhood queue" : "County queue"}
+                  </p>
+                  <h2 className="font-display text-xl font-semibold tracking-tight">
+                    {activeCounty ? "Richardson neighborhoods" : "Send responders here first"}
+                  </h2>
+                  <p className="mb-5 mt-2 text-xs leading-relaxed text-muted-foreground">
+                    Ranked by people silent at home.
+                  </p>
+                  <div className="queue-column-heads flex justify-between border-b border-border pb-2 text-[11px] text-muted-foreground">
+                    <span>{activeCounty ? "Neighborhood" : "County"}</span>
+                    <span>Unconfirmed</span>
+                  </div>
+                  <div>
+                    {activeCounty
+                      ? ranked.map((d, i) => (
+                          <QueueRow
+                            key={d.id}
+                            rank={i + 1}
+                            name={d.name}
+                            count={districtCount(d, resolved)}
+                            onClick={() => setDistrict(d.id)}
+                          />
+                        ))
+                      : topCounties.map((c, i) => (
+                          <QueueRow
+                            key={c.geoid}
+                            rank={i + 1}
+                            name={`${c.name} County`}
+                            count={countySilentAtHome(c, resolved)}
+                            onClick={() => setCounty(c.geoid)}
+                          />
+                        ))}
+                  </div>
+                  {!activeCounty && (
+                    <p className="mt-4 text-[11px] text-muted-foreground">
+                      Pick any of the 254 counties on the map or from the county menu.
+                    </p>
+                  )}
+                </section>
+              ) : (
+                <section className="p-6">
+                  <p className="section-kicker mb-2">
+                    02 <span className="text-border">/</span> County status
+                  </p>
+                  <p className="text-sm">
+                    Storm severity{" "}
+                    <span className="font-semibold">
+                      {Math.round(activeCounty.severity * 100)}%
+                    </span>{" "}
+                    · {activeCounty.population.toLocaleString()} residents
+                  </p>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    {activeCounty.silentAtHome
+                      ? "County response team is working through check-ins."
+                      : "No one silent at home. Monitoring only."}
+                  </p>
+                  <Button
+                    onClick={() => setDistrict("elm")}
+                    variant="outline"
+                    className="mt-5 w-full"
+                  >
+                    Open Elm household demo <ArrowRight />
+                  </Button>
+                </section>
+              )}
             </>
           ) : (
             <>
@@ -706,10 +730,7 @@ export function Dashboard() {
                 <Button
                   variant="link"
                   className="mb-3 h-auto p-0 text-xs text-muted-foreground"
-                  onClick={() => {
-                    setDistrict(null);
-                    setSelected(null);
-                  }}
+                  onClick={backToTexas}
                 >
                   <ArrowLeft /> Back to Texas
                 </Button>
@@ -954,6 +975,34 @@ export function Dashboard() {
         </SheetContent>
       </Sheet>
     </div>
+  );
+}
+function QueueRow({
+  rank,
+  name,
+  count,
+  onClick,
+}: {
+  rank: number;
+  name: string;
+  count: number;
+  onClick: () => void;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      onClick={onClick}
+      className="district-row h-auto min-h-14 w-full justify-start gap-3 rounded-none px-0 py-4"
+    >
+      <span className="w-5 font-mono text-[11px] text-muted-foreground">
+        {String(rank).padStart(2, "0")}
+      </span>
+      <span className="flex-1 text-left text-sm">{name}</span>
+      <span className="text-base font-semibold tabular-nums text-foreground">
+        {count.toLocaleString()}
+      </span>
+      <ChevronRight className="text-muted-foreground" />
+    </Button>
   );
 }
 function LegendDot({ tone, text }: { tone: string; text: string }) {

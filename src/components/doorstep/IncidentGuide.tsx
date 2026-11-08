@@ -82,7 +82,7 @@ export function IncidentGuide({
           </div>
           <dl className="my-4 border-y border-border py-1 text-sm">
             <div className="flex justify-between gap-3 py-2">
-              <dt className="text-muted-foreground">Citywide unconfirmed</dt>
+              <dt className="text-muted-foreground">Statewide unconfirmed</dt>
               <dd className="font-semibold tabular-nums">{unconfirmed}</dd>
             </div>
             <div className="flex justify-between gap-3 py-2">
