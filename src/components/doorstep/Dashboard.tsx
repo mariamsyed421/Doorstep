@@ -570,10 +570,12 @@ export function Dashboard() {
                                       </span>
                                     </span>
                                     <span className="mt-1 block text-[11px] text-muted-foreground">
-                                      {r.address}
+                                      {r.address} · {r.language}
                                     </span>
                                   </span>
-                                  <ChevronRight className="text-muted-foreground" />
+                                  <span className="grid h-8 min-w-8 place-items-center rounded-full bg-primary px-2 text-sm font-bold text-primary-foreground" title="Overlooked score">
+                                    {score(r)}
+                                  </span>
                                 </Button>
                                 <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
                                   {r.planAnswer === "home"
@@ -583,6 +585,7 @@ export function Dashboard() {
                                     : planLabel(r)}
                                   {r.livesAlone ? " · lives alone" : ""} · silent {r.silentHours}h
                                 </p>
+                                <Ladder step={pending[r.id] ? 4 : r.silentHours >= 3 ? 2 : 1} />
                                 <Button
                                   id={`act-${r.id}`}
                                   onClick={() => act(r)}
@@ -837,5 +840,37 @@ function LegendDot({ tone, text }: { tone: string; text: string }) {
       <span className={cn("size-2 rounded-full", tone)} />
       {text}
     </span>
+  );
+}
+
+const STEPS = ["Text resent", "Voice call", "Family contacted", "Neighbor asked", "Responders flagged"];
+function score(r: Resident) {
+  return (r.livesAlone ? 3 : 0) + (r.age >= 70 ? 3 : 0) + (r.language !== "English" ? 2 : 0) + Math.min(r.silentHours, 4);
+}
+function Ladder({ step }: { step: number }) {
+  return (
+    <ol className="mt-4 grid grid-cols-5 gap-1.5" aria-label={`Escalation step ${step} of 5`}>
+      {STEPS.map((label, i) => {
+        const n = i + 1;
+        return (
+          <li key={label} className="min-w-0">
+            <span
+              className={cn(
+                "block h-1.5 rounded-full transition-colors duration-500",
+                n < step ? "bg-primary/50" : n === step ? "bg-primary" : "bg-muted",
+              )}
+            />
+            <span
+              className={cn(
+                "mt-1.5 block text-[10px] leading-tight",
+                n === step ? "font-bold text-primary" : "text-muted-foreground",
+              )}
+            >
+              {n}. {label}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
   );
 }
