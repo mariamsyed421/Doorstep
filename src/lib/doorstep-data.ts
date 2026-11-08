@@ -1,3 +1,5 @@
+import { TEXAS_COUNTIES, type CountyResponse } from "./texas-county-data";
+
 export type PlanAnswer = "home" | "family" | "shelter" | null;
 export type CheckIn = "safe" | "needsHelp" | "silent";
 
@@ -473,17 +475,43 @@ export function districtCount(d: District, resolved: Resolutions) {
       ).length
     : d.silentAtHome;
 }
+export { TEXAS_COUNTIES, type CountyResponse } from "./texas-county-data";
+
+/** Dallas County contains Richardson, so it hosts the neighborhood and Elm Street demos. */
+export const DEMO_COUNTY = "48113";
+export const COUNTY_BY_GEOID = new Map(TEXAS_COUNTIES.map((c) => [c.geoid, c]));
+export const TEXAS_TOTALS = TEXAS_COUNTIES.reduce(
+  (t, c) => ({
+    population: t.population + c.population,
+    enrolled: t.enrolled + c.enrolled,
+    silent: t.silent + c.silent,
+    silentAtHome: t.silentAtHome + c.silentAtHome,
+    liveAloneSilent: t.liveAloneSilent + c.liveAloneSilent,
+    outages: t.outages + c.outages,
+  }),
+  { population: 0, enrolled: 0, silent: 0, silentAtHome: 0, liveAloneSilent: 0, outages: 0 },
+);
+/** Counties ranked by residents silent at home, highest first. */
+export const COUNTIES_BY_PRIORITY = [...TEXAS_COUNTIES].sort(
+  (a, b) => b.silentAtHome - a.silentAtHome || b.silent - a.silent,
+);
+function resolvedSilent(resolved: Resolutions) {
+  return RESIDENTS.filter(
+    (r) =>
+      r.checkInStatus === "silent" &&
+      resolved[r.id] &&
+      resolved[r.id] !== "silent" &&
+      resolved[r.id] !== "helpOnWay",
+  ).length;
+}
+export function unconfirmed(resolved: Resolutions) {
+  return TEXAS_TOTALS.silentAtHome - resolvedSilent(resolved);
+}
 export function accountedFor(resolved: Resolutions) {
-  return (
-    11968 +
-    RESIDENTS.filter(
-      (r) =>
-        r.checkInStatus === "silent" &&
-        resolved[r.id] &&
-        resolved[r.id] !== "silent" &&
-        resolved[r.id] !== "helpOnWay",
-    ).length
-  );
+  return TEXAS_TOTALS.enrolled - unconfirmed(resolved);
+}
+export function countySilentAtHome(c: CountyResponse, resolved: Resolutions) {
+  return c.geoid === DEMO_COUNTY ? c.silentAtHome - resolvedSilent(resolved) : c.silentAtHome;
 }
 export function markerState(r: Resident, resolved: Resolutions) {
   const status = resolved[r.id] ?? r.checkInStatus;
@@ -495,5 +523,10 @@ export function markerState(r: Resident, resolved: Resolutions) {
 
 /** Urgency score: lives alone, age, language barrier, and hours silent. */
 export function urgencyScore(r: Resident) {
-  return (r.livesAlone ? 3 : 0) + (r.age >= 70 ? 3 : 0) + (r.language !== "English" ? 2 : 0) + Math.min(r.silentHours, 4);
+  return (
+    (r.livesAlone ? 3 : 0) +
+    (r.age >= 70 ? 3 : 0) +
+    (r.language !== "English" ? 2 : 0) +
+    Math.min(r.silentHours, 4)
+  );
 }

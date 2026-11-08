@@ -80,7 +80,20 @@ export function addResponseLayers(map: Map) {
       type: "fill",
       source: "texas-counties",
       paint: {
-        "fill-color": "#ed1d24",
+        // Choropleth of residents silent at home (mock statewide data).
+        "fill-color": [
+          "step",
+          ["to-number", ["get", "home"], 0],
+          "#fbeee6",
+          1,
+          "#f8d3bd",
+          5,
+          "#f39465",
+          20,
+          "#ec6245",
+          60,
+          "#ed1d24",
+        ],
         "fill-opacity": [
           "interpolate",
           ["linear"],
@@ -89,11 +102,13 @@ export function addResponseLayers(map: Map) {
           [
             "case",
             ["boolean", ["feature-state", "selected"], false],
-            0.12,
+            0.75,
             ["boolean", ["feature-state", "hover"], false],
-            0.2,
-            0.025,
+            0.8,
+            0.55,
           ],
+          9,
+          ["case", ["boolean", ["feature-state", "hover"], false], 0.3, 0.12],
           12,
           0,
         ],

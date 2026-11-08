@@ -33,6 +33,13 @@ import {
   planLabel,
   districtCount,
   accountedFor,
+  unconfirmed,
+  urgency,
+  COUNTIES_BY_PRIORITY,
+  COUNTY_BY_GEOID,
+  DEMO_COUNTY,
+  TEXAS_TOTALS,
+  countySilentAtHome,
   type Resident,
   type Resolutions,
   type ResponseStatus,
@@ -50,6 +57,7 @@ const groups = [
 ] as const;
 export function Dashboard() {
   const [district, setDistrict] = useState<string | null>(null);
+  const [county, setCounty] = useState<string | null>(null);
   const [streetView, setStreetView] = useState(true);
   const [resolved, setResolved] = useState<Resolutions>({});
   const [selected, setSelected] = useState<string | null>(null);
@@ -65,6 +73,13 @@ export function Dashboard() {
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const reduce = useReducedMotion();
   const activeDistrict = DISTRICTS.find((d) => d.id === district);
+  const activeCounty = county ? COUNTY_BY_GEOID.get(county) : undefined;
+  const topCounties = COUNTIES_BY_PRIORITY.slice(0, 12);
+  function backToTexas() {
+    setDistrict(null);
+    setCounty(null);
+    setSelected(null);
+  }
   const person = RESIDENTS.find((r) => r.id === selected);
   const phonePerson = RESIDENTS.find((r) => r.id === phone);
   const silent = RESIDENTS.filter((r) => (resolved[r.id] ?? r.checkInStatus) === "silent");
@@ -86,6 +101,9 @@ export function Dashboard() {
       resolved[r.id] &&
       resolved[r.id] !== "silent",
   ).length;
+  const funnel = activeCounty ?? TEXAS_TOTALS;
+  // Elm Street confirmations only change the Dallas County and statewide figures.
+  const funnelResolved = !activeCounty || activeCounty.geoid === DEMO_COUNTY ? resolvedHome : 0;
   function later(ms: number, fn: () => void) {
     timers.current.push(setTimeout(fn, ms));
   }
@@ -167,6 +185,7 @@ export function Dashboard() {
     setDemo(true);
     setDemoPhase(1);
     setDistrict(null);
+    setCounty(null);
     setResolved({});
     setReplies({});
     setLogs({});
@@ -203,7 +222,9 @@ export function Dashboard() {
       setWalking(null);
       setSelected(null);
       setDistrict(null);
+      setCounty(null);
       setDemoPhase(6);
+      ["438", "452"].forEach((id) => addLog(id, "Responder team confirmed safe", "5:16pm"));
       ["438", "452"].forEach((id) => addLog(id, "Responder team confirmed safe", "5:16pm"));
     });
     later(14000, () => {
@@ -230,15 +251,17 @@ export function Dashboard() {
             <p className="text-[11px] text-muted-foreground">Catastrophe response</p>
           </div>
         </div>
-        <div className="header-context">
-          <span className="text-sm font-medium">Richardson operations</span>
-          <span className="text-xs text-muted-foreground">State Farm</span>
+        <div className="hidden items-center gap-2 text-sm text-muted-foreground lg:flex">
+          <span className="text-xl font-bold italic tracking-tight text-brand">
+            State Farm<sup className="ml-0.5 text-[10px] not-italic">®</sup>
+          </span>
+          <span className="mx-3 text-border">/</span> Texas operations
         </div>
         <div className="header-actions flex items-center gap-3 md:gap-5">
           <span className="hidden items-center gap-2 text-xs text-muted-foreground sm:flex">
             <span className="size-1.5 rounded-full bg-brand" /> Live response
           </span>
-          <Button onClick={demo ? stopDemo : runDemo} className="h-11 gap-2 px-4">
+          <LiquidButton variant="primary" onClick={demo ? stopDemo : runDemo} className="h-10 px-5">
             {demo ? <Square /> : <Play />} {demo ? "Stop demo" : "Run demo"}
           </Button>
           <span
@@ -249,42 +272,36 @@ export function Dashboard() {
           </span>
         </div>
       </header>
-      <div className="incident-summary">
-        <div className="incident-heading">
-          <p className="section-kicker">
-            Storm response <span className="text-border">/</span> North Texas
-          </p>
-          <h2 className="mt-2 font-display text-[28px] font-semibold leading-tight tracking-tight md:text-[32px]">
-            Richardson, Texas
-          </h2>
-          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-            Severe thunderstorm · Saturday, November 7 · 3 hours ago
-          </p>
-        </div>
-        <IncidentGuide
-          priorityCount={priorityHomes.length}
-          unconfirmed={32 - (accountedFor(resolved) - 11968)}
-          pendingCount={silent.filter((r) => Boolean(pending[r.id])).length}
-          nextHome={nextHome}
-          demo={demo}
-          onReview={() => {
-            if (!nextHome) return;
-            setDistrict("elm");
-            setStreetView(false);
-            openPerson(nextHome.id);
-          }}
-        />
-        <div className="incident-totals" aria-live="polite">
+      <div className="incident-summary flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4 md:px-7">
+        <div className="flex items-center gap-3">
+          <CloudLightning className="size-5 text-primary" />
           <div>
-            <p className="incident-number">
-              {accountedFor(resolved).toLocaleString()}
-              <span className="ml-2 text-sm font-normal text-muted-foreground">/ 12,000</span>
+            <p className="text-sm font-semibold">
+              Severe storms across Texas{" "}
+              <span className="font-normal text-muted-foreground">· 3 hours ago</span>
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Saturday, November 7 · Squall line from Wichita Falls through Dallas to Tyler ·{" "}
+              {TEXAS_TOTALS.outages.toLocaleString()} without power
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-4" aria-live="polite">
+          <div className="text-right">
+            <p className="text-xl font-semibold tabular-nums">
+              {accountedFor(resolved).toLocaleString()}{" "}
+              <span className="text-sm font-normal text-muted-foreground">
+                of {TEXAS_TOTALS.enrolled.toLocaleString()}
+              </span>
             </p>
             <p className="mt-1 text-xs text-muted-foreground">Residents accounted for</p>
           </div>
-          <div className="incident-unconfirmed">
-            <p className="incident-number text-danger">{32 - (accountedFor(resolved) - 11968)}</p>
-            <p className="mt-1 text-xs text-muted-foreground">Still unconfirmed</p>
+          <div className="hidden h-8 w-px bg-border sm:block" />
+          <div className="hidden text-right sm:block">
+            <p className="text-xl font-semibold text-danger">
+              {unconfirmed(resolved).toLocaleString()}
+            </p>
+            <p className="text-xs text-muted-foreground">still unconfirmed</p>
           </div>
         </div>
       </div>
@@ -294,6 +311,8 @@ export function Dashboard() {
             <Suspense fallback={<MapLoadingState />}>
               <ResponseMap
                 district={district}
+                county={county}
+                onCounty={setCounty}
                 resolved={resolved}
                 selected={selected}
                 walking={walking}
@@ -317,25 +336,26 @@ export function Dashboard() {
           <div className="map-float left-5 top-5 flex items-center gap-3 rounded-lg px-4 py-3">
             <MapPin className="size-4 text-primary" />
             <div>
-              <p className="text-sm font-semibold">{activeDistrict?.name ?? "Texas"}</p>
+              <p className="text-sm font-semibold">
+                {activeDistrict?.name ?? (activeCounty ? `${activeCounty.name} County` : "Texas")}
+              </p>
               <p className="text-[11px] text-muted-foreground">
                 {district === "elm"
                   ? "30 households · Elm Street"
                   : district
                     ? `${activeDistrict?.totalResidents.toLocaleString()} residents`
-                    : "Richardson response · 9 neighborhoods"}
+                    : activeCounty
+                      ? `${activeCounty.enrolled.toLocaleString()} enrolled residents`
+                      : `254 counties · ${TEXAS_TOTALS.enrolled.toLocaleString()} enrolled`}
               </p>
             </div>
-            {district && (
+            {(district || county) && (
               <Button
                 variant="ghost"
                 size="icon"
                 title="Back to Texas"
                 aria-label="Back to Texas"
-                onClick={() => {
-                  setDistrict(null);
-                  setSelected(null);
-                }}
+                onClick={backToTexas}
               >
                 <ArrowLeft />
               </Button>
@@ -361,13 +381,18 @@ export function Dashboard() {
                     role="img"
                     aria-label="Relative density of people silent at home, from low in peach to high in red"
                   />
+                  <div
+                    className="heatmap-scale"
+                    role="img"
+                    aria-label="Relative density of people silent at home, from low in peach to high in red"
+                  />
                   <div className="mt-1.5 flex justify-between text-muted-foreground">
                     <span>Lower</span>
                     <span>Higher</span>
+                    <span>Lower</span>
+                    <span>Higher</span>
                   </div>
-                  <p className="mt-2 text-muted-foreground">
-                    Silent at home · Richardson demo data
-                  </p>
+                  <p className="mt-2 text-muted-foreground">Silent at home by county · mock data</p>
                 </div>
               )}
             </div>
@@ -390,94 +415,168 @@ export function Dashboard() {
           )}
           <span className="map-float right-5 top-5 hidden items-center gap-2 rounded-lg px-3 py-2 text-[11px] text-muted-foreground sm:flex">
             <Layers className="size-3.5" />
-            {district ? "Neighborhood view" : "Texas heatmap"}
+            {district ? "Neighborhood view" : county ? "County view" : "Texas heatmap"}
           </span>
         </section>
         <aside
           className="response-panel"
-          aria-label={district ? "Where to look" : "City priorities"}
+          aria-label={
+            district ? "Where to look" : county ? "County priorities" : "Statewide priorities"
+          }
         >
           {!district ? (
             <>
               <section className="response-overview border-b border-border p-6">
-                <div className="mb-6">
-                  <p className="section-kicker mb-2">
-                    01 <span className="text-border">/</span> Response overview
-                  </p>
-                  <h2 className="font-display text-[23px] font-semibold leading-tight tracking-tight">
-                    From city to doorstep
+                <div className="mb-6 flex items-center justify-between">
+                  <h2 className="text-lg font-semibold">
+                    {activeCounty ? `${activeCounty.name} County` : "From state to doorstep"}
                   </h2>
+                  {activeCounty ? (
+                    <Button
+                      variant="link"
+                      className="h-auto p-0 text-xs text-muted-foreground"
+                      onClick={backToTexas}
+                    >
+                      <ArrowLeft /> Texas
+                    </Button>
+                  ) : (
+                    <Crosshair className="size-4 text-primary" />
+                  )}
                 </div>
                 <dl className="response-counts">
                   {[
-                    { label: "Residents in the storm's path", value: 12000 },
-                    { label: "Replied safe", value: 11640 },
-                    { label: "Silent after check-in", value: 360 - resolvedHome },
-                    { label: "Said they'd be home", value: 35 - resolvedHome },
-                    { label: "Home + vulnerable", value: Math.max(0, 3 - resolvedHome) },
-                  ].map((item, index) => (
-                    <div
-                      key={item.label}
-                      className={cn(
-                        "response-count-row",
-                        index === 4 && "response-count-row--priority",
-                      )}
-                    >
-                      <dt>{item.label}</dt>
-                      <dd>{item.value.toLocaleString()}</dd>
+                    {
+                      label: "Residents in the storm's path",
+                      value: funnel.enrolled,
+                      width: "100%",
+                      color: "bg-unknown",
+                      text: "text-foreground",
+                    },
+                    {
+                      label: "Replied safe",
+                      value: funnel.enrolled - funnel.silent + funnelResolved,
+                      width: "97%",
+                      color: "bg-safe",
+                      text: "text-foreground",
+                    },
+                    {
+                      label: "Silent after check-in",
+                      value: funnel.silent - funnelResolved,
+                      width: "53%",
+                      color: "bg-primary",
+                      text: "text-primary",
+                    },
+                    {
+                      label: "Said they'd be home",
+                      value: Math.max(0, funnel.silentAtHome - funnelResolved),
+                      width: "30%",
+                      color: "bg-alert",
+                      text: "text-alert",
+                    },
+                    {
+                      label: "Home + vulnerable",
+                      value: Math.max(0, funnel.liveAloneSilent - funnelResolved),
+                      width: "12%",
+                      color: "bg-danger",
+                      text: "text-danger",
+                    },
+                  ].map((f, i) => (
+                    <div key={f.label}>
+                      <div className="mb-2 flex items-baseline justify-between gap-2">
+                        <span className="text-xs text-muted-foreground">{f.label}</span>
+                        <span className={cn("text-lg font-semibold tabular-nums", f.text)}>
+                          {f.value.toLocaleString()}
+                        </span>
+                      </div>
+                      <motion.div
+                        key={`${f.label}-${demo}-${county}`}
+                        className={cn("funnel-bar", f.color)}
+                        initial={{ width: 0 }}
+                        animate={{ width: f.width }}
+                        transition={{ duration: reduce ? 0 : 0.7, delay: reduce ? 0 : i * 0.15 }}
+                      />
                     </div>
                   ))}
-                </dl>
-                <p
-                  className={cn(
-                    "priority-note mt-5 flex items-start gap-2 text-xs leading-relaxed",
-                    resolvedHome < 3 ? "text-danger" : "text-foreground",
-                  )}
-                >
-                  {resolvedHome < 3 ? (
-                    <Footprints className="mt-0.5 size-4 shrink-0" />
-                  ) : (
-                    <Check className="mt-0.5 size-4 shrink-0" />
-                  )}
-                  {resolvedHome < 3
-                    ? `${3 - resolvedHome} people need a knock first`
-                    : "Priority home checks are complete"}
+                </div>
+                <p className="mt-5 flex items-center gap-2 text-xs text-danger">
+                  <Footprints className="size-4" />
+                  {Math.max(0, funnel.liveAloneSilent - funnelResolved).toLocaleString()} people
+                  need a knock first
+                </p>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {funnel.outages.toLocaleString()} customers without power
                 </p>
               </section>
-              <section className="p-6">
-                <p className="section-kicker mb-2">
-                  02 <span className="text-border">/</span> Neighborhood queue
-                </p>
-                <h2 className="font-display text-xl font-semibold tracking-tight">
-                  Send responders here first
-                </h2>
-                <p className="mb-5 mt-2 text-xs leading-relaxed text-muted-foreground">
-                  Ranked by people silent at home.
-                </p>
-                <div className="queue-column-heads flex justify-between border-b border-border pb-2 text-[11px] text-muted-foreground">
-                  <span>Neighborhood</span>
-                  <span>Unconfirmed</span>
-                </div>
-                <div>
-                  {ranked.map((d, i) => (
-                    <Button
-                      key={d.id}
-                      variant="ghost"
-                      onClick={() => setDistrict(d.id)}
-                      className="district-row h-auto min-h-14 w-full justify-start gap-3 rounded-none px-0 py-4"
-                    >
-                      <span className="w-5 font-mono text-[11px] text-muted-foreground">
-                        {String(i + 1).padStart(2, "0")}
-                      </span>
-                      <span className="flex-1 text-left text-sm">{d.name}</span>
-                      <span className="text-base font-semibold tabular-nums text-foreground">
-                        {districtCount(d, resolved)}
-                      </span>
-                      <ChevronRight className="text-muted-foreground" />
-                    </Button>
-                  ))}
-                </div>
-              </section>
+              {!activeCounty ? (
+                <section className="p-6">
+                  <div className="mb-1 flex items-center justify-between">
+                    <h2 className="text-base font-semibold">Send responders here first</h2>
+                    <ArrowDown className="size-4 text-muted-foreground" />
+                  </div>
+                  <p className="mb-5 text-xs text-muted-foreground">
+                    Counties ranked by people silent at home
+                  </p>
+                  <div className="space-y-1">
+                    {topCounties.map((c, i) => (
+                      <PriorityRow
+                        key={c.geoid}
+                        rank={i + 1}
+                        name={`${c.name} County`}
+                        count={countySilentAtHome(c, resolved)}
+                        tone={countyTone(countySilentAtHome(c, resolved))}
+                        onClick={() => setCounty(c.geoid)}
+                      />
+                    ))}
+                  </div>
+                  <p className="mt-4 text-[11px] text-muted-foreground">
+                    Pick any of the 254 counties on the map or from the county menu.
+                  </p>
+                </section>
+              ) : activeCounty.geoid === DEMO_COUNTY ? (
+                <section className="p-6">
+                  <div className="mb-1 flex items-center justify-between">
+                    <h2 className="text-base font-semibold">Richardson neighborhoods</h2>
+                    <ArrowDown className="size-4 text-muted-foreground" />
+                  </div>
+                  <p className="mb-5 text-xs text-muted-foreground">
+                    Ranked by people silent at home
+                  </p>
+                  <div className="space-y-1">
+                    {ranked.map((d, i) => (
+                      <PriorityRow
+                        key={d.id}
+                        rank={i + 1}
+                        name={d.name}
+                        count={districtCount(d, resolved)}
+                        tone={districtTone(districtCount(d, resolved))}
+                        onClick={() => setDistrict(d.id)}
+                      />
+                    ))}
+                  </div>
+                </section>
+              ) : (
+                <section className="p-6">
+                  <p className="text-sm">
+                    Storm severity{" "}
+                    <span className="font-semibold">
+                      {Math.round(activeCounty.severity * 100)}%
+                    </span>{" "}
+                    · {activeCounty.population.toLocaleString()} residents
+                  </p>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    {activeCounty.silentAtHome
+                      ? "County response team is working through check-ins."
+                      : "No one silent at home. Monitoring only."}
+                  </p>
+                  <Button
+                    onClick={() => setDistrict("elm")}
+                    variant="outline"
+                    className="mt-5 w-full"
+                  >
+                    Open Elm household demo <ArrowRight />
+                  </Button>
+                </section>
+              )}
             </>
           ) : (
             <>
@@ -485,10 +584,7 @@ export function Dashboard() {
                 <Button
                   variant="link"
                   className="mb-3 h-auto p-0 text-xs text-muted-foreground"
-                  onClick={() => {
-                    setDistrict(null);
-                    setSelected(null);
-                  }}
+                  onClick={backToTexas}
                 >
                   <ArrowLeft /> Back to Texas
                 </Button>
@@ -559,7 +655,7 @@ export function Dashboard() {
                                       {reasons(r).map((c) => (
                                         <span
                                           key={c}
-                                          className="rounded-sm bg-secondary px-2 py-1 text-[11px] text-muted-foreground"
+                                          className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-foreground"
                                         >
                                           {c}
                                         </span>
@@ -567,7 +663,7 @@ export function Dashboard() {
                                     </span>
                                   </span>
                                   <span
-                                    className="shrink-0 border-l border-border pl-3 text-xs font-semibold tabular-nums text-danger"
+                                    className="grid h-8 min-w-8 place-items-center rounded-full bg-primary px-2 text-sm font-bold text-primary-foreground"
                                     title="Urgency score"
                                   >
                                     Urgency {urgencyScore(r)}
@@ -823,8 +919,8 @@ export function Dashboard() {
                 ))}
               </ol>
               {(resolved[person.id] ?? person.checkInStatus) === "silent" && (
-                <Button
-                  variant="default"
+                <LiquidButton
+                  variant="primary"
                   className="mt-7 h-12 w-full whitespace-normal rounded-xl"
                   onClick={() => act(person)}
                 >
@@ -837,6 +933,46 @@ export function Dashboard() {
         </SheetContent>
       </Sheet>
     </div>
+  );
+}
+function countyTone(count: number) {
+  return count >= 60 ? "bg-danger" : count >= 20 ? "bg-alert" : count ? "bg-primary" : "bg-unknown";
+}
+function districtTone(count: number) {
+  const level = urgency(count);
+  return level === "red"
+    ? "bg-danger"
+    : level === "orange"
+      ? "bg-alert"
+      : count
+        ? "bg-primary"
+        : "bg-unknown";
+}
+function PriorityRow({
+  rank,
+  name,
+  count,
+  tone,
+  onClick,
+}: {
+  rank: number;
+  name: string;
+  count: number;
+  tone: string;
+  onClick: () => void;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      onClick={onClick}
+      className="district-row h-auto min-h-14 w-full justify-start gap-3 rounded-xl px-3 py-3"
+    >
+      <span className="w-4 text-xs text-muted-foreground">{String(rank).padStart(2, "0")}</span>
+      <span className={cn("size-2 shrink-0 rounded-full", tone)} />
+      <span className="flex-1 text-left text-sm">{name}</span>
+      <span className="text-sm tabular-nums text-muted-foreground">{count.toLocaleString()}</span>
+      <ChevronRight className="text-muted-foreground" />
+    </Button>
   );
 }
 function LegendDot({ tone, text }: { tone: string; text: string }) {
